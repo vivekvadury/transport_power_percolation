@@ -1,0 +1,11 @@
+prefix=/project/build/lib.linux-x86_64-cpython-312
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: networkit
+Description: networkit
+URL: http://networkit.github.io
+Version: 11.2.1
+Cflags: -I${includedir}  -DNETWORKIT_RELEASE_LOGGING
+Libs: -L${libdir} -lnetworkit
