@@ -1,0 +1,54 @@
+================================================================================
+NOTEBOOK OUTPUT LOG
+Notebook: 2-NetworkX-Target-approxBC-v-Random.ipynb
+Date: 2026-02-05 07:46:13
+================================================================================
+
+✓ Output logging initialized - all outputs will be saved to notebook_outputs.txt
+⏱ Cell runtime: 0.015 seconds
+Maximum Betweenness Centrality: 222934938.1163294
+Minimum Betweenness Centrality: 0.0
+Average Betweenness Centrality: 1097383.6980646325
+⏱ Cell runtime: 0.000 seconds
+Number of nodes in NetworkX graph: 23303
+Number of edges in NetworkX graph: 34243
+⏱ Cell runtime: 5.126 seconds
+Node with maximum betweenness centrality: 16756.0
+Maximum betweenness centrality value: 222934938.1163294
+dict_keys(['Weight'])
+Number of nodes in NetworkX subgraph: 23298
+Number of edges in NetworkX subgraph: 34239
+⏱ Cell runtime: 0.185 seconds
+Total Number of Edges in Network:  34243
+Number of Edges in Subnetwork:  34239
+Total Number of Nodes in Network:  23303
+Number of Nodes in Subnetwork:  23298
+Average degree of Network =  2.9389349010856973
+Average degree of Subnetwork =  2.939222250836982
+Minimum clustering coefficient: 0
+Maximum clustering coefficient: 1.0
+Average Clustering Coefficient of Network =  0.019285377112695484
+Average Clustering Coefficient of Subnetwork =  0.01928951596090406
+Minimum degree: 1
+Maximum degree: 8
+Node with maximum betweenness centrality: 16756.0
+Maximum betweenness centrality value: 222934938.1163294
+Completed 50 degree-based targeted attack simulations
+Mean core proportion: [1.00000000e+00 9.99957078e-01 9.99903854e-01 ... 4.29221392e-05
+ 4.29221392e-05 4.29221392e-05]
+⏱ Cell runtime: 11988.997 seconds
+Value of M: 1
+Number of nodes removed in first 3 steps: 3
+completed targeted attack by betweenness centrality (static)
+⏱ Cell runtime: 1096.026 seconds
+completed targeted attacks by betweenness centrality (dynamic)
+⏱ Cell runtime: 7552.677 seconds
+Completed 50 random attack simulations
+Mean core proportion: [1.00000000e+00 9.99940767e-01 9.99889261e-01 ... 4.29221392e-05
+ 4.29221392e-05 4.29221392e-05]
+⏱ Cell runtime: 5857.924 seconds
+
+================================================================================
+END OF NOTEBOOK OUTPUT LOG
+Completed: 2026-02-05 15:07:55
+================================================================================
