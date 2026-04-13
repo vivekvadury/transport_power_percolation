@@ -1,23 +1,31 @@
 """
 script_02_percolation.py
 ========================
-Core analysis loop: for each centrality strategy (BC and DC), incrementally
-remove the top-k nodes (k=1..10) from the LCC and measure:
-  - Connected components
-  - LCC fraction
-  - Louvain community structure + modularity
+Two focused analyses — no redundancy with the original Seattle-clean work:
 
-Also detects the tipping point: first k at which a new component appears.
+  PART A — Tipping Point Scan
+    Incrementally remove nodes one at a time (k=1..10) for each strategy.
+    Only asks: at what k does the network first fracture into two pieces?
+    Runs Louvain once, at that exact tipping moment, to capture the community
+    structure at the first point of real isolation.
+
+  PART B — Full-Attack Snapshot
+    Remove all 10 top-centrality nodes at once for each strategy.
+    Runs Louvain on the resulting graph.
+    This is the "worst-case attack" result — the final community geography
+    after the most damaging targeted removal possible within k=10.
 
 Run AFTER script_01_build_graph.py:
     python scripts/script_02_percolation.py
 
 Outputs (written to output/):
-    percolation_bc.csv              - per-k metrics for BC strategy
-    percolation_dc.csv              - per-k metrics for DC strategy
-    community_assignments_bc.pkl    - {k: {node_id: community_index}}
-    community_assignments_dc.pkl    - same for DC
-    tipping_points.csv              - first k where components > 1 for each strategy
+    tipping_points.csv                    - first fracture k, causal node, component sizes
+    community_assignments_bc_tipping.pkl  - {node_id: community_index} at BC tipping k
+    community_assignments_dc_tipping.pkl  - same for DC
+    post_attack_bc.csv                    - community summary after removing all 10 BC nodes
+    post_attack_dc.csv                    - same for DC
+    community_assignments_bc_full.pkl     - {node_id: community_index} at k=10 for BC
+    community_assignments_dc_full.pkl     - same for DC
 """
 
 import json
@@ -27,208 +35,236 @@ import pandas as pd
 import networkx as nx
 import networkx.algorithms.community as nx_comm
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
 ROOT = pathlib.Path(__file__).parent.parent
 OUT  = ROOT / "output"
 
 
-def run_percolation_loop(G_lcc: nx.Graph,
-                         removal_order: list[int],
-                         strategy_name: str,
-                         seed: int = 42) -> tuple[pd.DataFrame, dict, int | None]:
-    """
-    Iteratively remove the top-k nodes and measure community structure.
+# ══════════════════════════════════════════════════════════════════════════════
+# PART A — Tipping Point Scan
+# ══════════════════════════════════════════════════════════════════════════════
 
-    The graph is mutated incrementally (one node removed per step), which
-    means the state at step k reflects exactly k cumulative removals.
+def find_tipping_point(G_lcc: nx.Graph,
+                       removal_order: list[int],
+                       strategy: str,
+                       seed: int = 42) -> dict:
+    """
+    Incrementally remove nodes until the network first fractures.
+
+    Only tracks connected-component count at each step — no Louvain in the
+    loop, so this is fast. When the tipping point is found, runs Louvain once
+    on that graph state to capture the community structure at the moment of
+    first isolation.
 
     Parameters
     ----------
-    G_lcc          : the clean LCC graph (will be deep-copied internally)
-    removal_order  : list of node IDs ranked 1st..10th for removal
-    strategy_name  : 'bc' or 'dc' (used only for console labels)
-    seed           : random seed for Louvain reproducibility
+    G_lcc          : clean LCC graph (copied internally, not mutated)
+    removal_order  : list of node IDs in ranked removal order
+    strategy       : 'BC' or 'DC' (for console output only)
+    seed           : Louvain seed for reproducibility
 
     Returns
     -------
-    results_df          : pd.DataFrame with per-k metrics
-    community_assignments : dict  {k (int): {node_id (int): community_index (int)}}
-    tipping_point       : int k at which num_components first > 1, or None
+    dict with keys:
+        tipping_k               - int k at first fracture, or None
+        causal_node_id          - node whose removal caused the split
+        component_sizes         - list of component sizes at tipping k (sorted desc)
+        community_assignment    - {node_id: community_index} at tipping k, or None
+        scan_log                - list of (k, node_id, num_components) for all steps
     """
-    N = G_lcc.number_of_nodes()
-    G_attacked = G_lcc.copy()
+    G = G_lcc.copy()
+    tipping_k = None
+    causal_node = None
+    tipping_assignment = None
+    tipping_sizes = []
+    scan_log = []
 
-    records = []
-    community_assignments = {}
-    tipping_point = None
+    print(f"\n  [{strategy}] Scanning for tipping point...")
+    for k, node in enumerate(removal_order, start=1):
+        G.remove_node(node)
+        num_comp = nx.number_connected_components(G)
+        scan_log.append((k, node, num_comp))
+        print(f"    k={k:2d}  removed node {node:6d}  →  {num_comp} component(s)")
 
-    label = strategy_name.upper()
+        if tipping_k is None and num_comp > 1:
+            tipping_k = k
+            causal_node = node
+            # Sizes of all components at the tipping moment
+            tipping_sizes = sorted(
+                [len(c) for c in nx.connected_components(G)], reverse=True
+            )
+            # Louvain snapshot at tipping point
+            communities = nx_comm.louvain_communities(G, seed=seed)
+            tipping_assignment = {}
+            for comm_idx, comm in enumerate(communities):
+                for nid in comm:
+                    tipping_assignment[nid] = comm_idx
+            print(f"\n  *** [{strategy}] TIPPING POINT at k={k} ***")
+            print(f"      Node {causal_node} caused the first fracture.")
+            print(f"      Component sizes: {tipping_sizes}")
+            print(f"      Louvain communities at tipping: "
+                  f"{len(communities)} communities, "
+                  f"Q={nx_comm.modularity(G, communities):.4f}\n")
 
-    for k, node_to_remove in enumerate(removal_order, start=1):
-        # Incremental removal
-        G_attacked.remove_node(node_to_remove)
+    if tipping_k is None:
+        print(f"  [{strategy}] No fracture in k=1..10 — network remained connected.")
 
-        # Connected components
-        num_components = nx.number_connected_components(G_attacked)
-        lcc_nodes = max(nx.connected_components(G_attacked), key=len)
-        lcc_size = len(lcc_nodes)
-        lcc_fraction = lcc_size / N
-
-        # Louvain community detection (handles disconnected graphs correctly)
-        communities = nx_comm.louvain_communities(G_attacked, seed=seed)
-        num_communities = len(communities)
-        num_nontrivial = sum(1 for c in communities if len(c) >= 2)
-        modularity = nx_comm.modularity(G_attacked, communities)
-
-        # Community sizes (sorted descending)
-        comm_sizes = sorted([len(c) for c in communities], reverse=True)
-
-        # Store community assignment per node for geo visualization
-        assignment = {}
-        for comm_idx, comm in enumerate(communities):
-            for node in comm:
-                assignment[node] = comm_idx
-        community_assignments[k] = assignment
-
-        # Detect tipping point
-        if tipping_point is None and num_components > 1:
-            tipping_point = k
-
-        records.append({
-            "k":                       k,
-            "removed_node_id":         node_to_remove,
-            "num_components":          num_components,
-            "lcc_size":                lcc_size,
-            "lcc_fraction":            round(lcc_fraction, 6),
-            "num_communities":         num_communities,
-            "num_nontrivial_communities": num_nontrivial,
-            "modularity":              round(modularity, 6),
-            "community_sizes_json":    json.dumps(comm_sizes),
-        })
-
-        # Tipping point banner
-        tip_marker = ""
-        if num_components > 1 and (k == 1 or
-                records[-2]["num_components"] == 1 if len(records) >= 2 else False):
-            tip_marker = "  <<< TIPPING POINT"
-
-        print(f"[{label} k={k:2d}] Removed node {node_to_remove:6d} | "
-              f"Components: {num_components} | "
-              f"LCC: {lcc_size} ({lcc_fraction:.4%}) | "
-              f"Communities: {num_nontrivial} non-trivial | "
-              f"Q={modularity:.4f}{tip_marker}")
-
-    results_df = pd.DataFrame(records)
-    return results_df, community_assignments, tipping_point
-
-
-def compute_tipping_summary(results_df: pd.DataFrame,
-                            strategy: str) -> dict:
-    """
-    Summarise the tipping point for one strategy.
-
-    Parameters
-    ----------
-    results_df : output of run_percolation_loop
-    strategy   : 'bc' or 'dc'
-
-    Returns
-    -------
-    dict with keys: strategy, tipping_k, causal_node_id,
-                    component_sizes_at_tipping_json
-    """
-    tipping_rows = results_df[results_df["num_components"] > 1]
-    if tipping_rows.empty:
-        return {
-            "strategy":                      strategy,
-            "tipping_k":                     None,
-            "causal_node_id":                None,
-            "component_sizes_at_tipping_json": json.dumps([]),
-        }
-    first = tipping_rows.iloc[0]
     return {
-        "strategy":                      strategy,
-        "tipping_k":                     int(first["k"]),
-        "causal_node_id":                int(first["removed_node_id"]),
-        "component_sizes_at_tipping_json": first["community_sizes_json"],
+        "tipping_k":            tipping_k,
+        "causal_node_id":       causal_node,
+        "component_sizes":      tipping_sizes,
+        "community_assignment": tipping_assignment,
+        "scan_log":             scan_log,
     }
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# PART B — Full-Attack Snapshot
+# ══════════════════════════════════════════════════════════════════════════════
+
+def full_attack_snapshot(G_lcc: nx.Graph,
+                         removal_order: list[int],
+                         strategy: str,
+                         seed: int = 42) -> dict:
+    """
+    Remove all 10 top-centrality nodes at once and analyse the result.
+
+    This answers the core question: what does the community geography look like
+    after the worst-case targeted attack within k=10?
+
+    Parameters
+    ----------
+    G_lcc          : clean LCC graph (copied internally)
+    removal_order  : list of 10 node IDs to remove
+    strategy       : 'BC' or 'DC'
+    seed           : Louvain seed
+
+    Returns
+    -------
+    dict with keys:
+        num_nodes_removed       - always 10 (or fewer if some not in LCC)
+        actually_removed        - list of node IDs successfully removed
+        num_components          - connected components after attack
+        component_sizes         - sorted list of component sizes
+        num_communities         - Louvain community count
+        num_nontrivial_communities - communities with ≥ 2 nodes
+        modularity              - Louvain Q score
+        community_sizes         - sorted list of community sizes
+        community_assignment    - {node_id: community_index}
+    """
+    G = G_lcc.copy()
+    actually_removed = [n for n in removal_order if n in G]
+    G.remove_nodes_from(actually_removed)
+
+    components = list(nx.connected_components(G))
+    component_sizes = sorted([len(c) for c in components], reverse=True)
+
+    communities = nx_comm.louvain_communities(G, seed=seed)
+    community_sizes = sorted([len(c) for c in communities], reverse=True)
+    num_nontrivial = sum(1 for c in communities if len(c) >= 2)
+    modularity = nx_comm.modularity(G, communities)
+
+    assignment = {}
+    for comm_idx, comm in enumerate(communities):
+        for nid in comm:
+            assignment[nid] = comm_idx
+
+    print(f"\n  [{strategy}] Full-attack snapshot (k=10):")
+    print(f"    Removed nodes: {actually_removed}")
+    print(f"    Connected components: {len(components)}")
+    print(f"    Largest component:    {component_sizes[0]:,} nodes "
+          f"({component_sizes[0]/G_lcc.number_of_nodes():.2%} of LCC)")
+    if len(component_sizes) > 1:
+        print(f"    Severed components:   {component_sizes[1:]} nodes")
+    print(f"    Louvain communities:  {len(communities)} total, "
+          f"{num_nontrivial} non-trivial")
+    print(f"    Modularity (Q):       {modularity:.4f}")
+
+    return {
+        "num_nodes_removed":          len(actually_removed),
+        "actually_removed":           actually_removed,
+        "num_components":             len(components),
+        "component_sizes":            component_sizes,
+        "num_communities":            len(communities),
+        "num_nontrivial_communities": num_nontrivial,
+        "modularity":                 modularity,
+        "community_sizes":            community_sizes,
+        "community_assignment":       assignment,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     print("=" * 65)
-    print("Script 02 — Incremental Percolation + Community Detection")
+    print("Script 02 — Tipping Point Scan + Full-Attack Community Analysis")
     print("=" * 65)
 
-    # Load LCC graph
-    print("\n[1/5] Loading LCC graph from output/lcc_graph.pkl...")
+    # Load inputs
+    print("\n[1/4] Loading LCC graph and removal orders...")
     with open(OUT / "lcc_graph.pkl", "rb") as f:
         G_lcc = pickle.load(f)
-    print(f"      {G_lcc.number_of_nodes()} nodes, {G_lcc.number_of_edges()} edges")
+    bc_order = pd.read_csv(OUT / "removal_order_bc.csv")["node_id"].astype(int).tolist()
+    dc_order = pd.read_csv(OUT / "removal_order_dc.csv")["node_id"].astype(int).tolist()
+    print(f"      LCC: {G_lcc.number_of_nodes():,} nodes, {G_lcc.number_of_edges():,} edges")
+    print(f"      BC removal order: {bc_order}")
+    print(f"      DC removal order: {dc_order}")
 
-    # Load removal orders
-    print("\n[2/5] Loading removal orders...")
-    bc_order_df = pd.read_csv(OUT / "removal_order_bc.csv")
-    dc_order_df = pd.read_csv(OUT / "removal_order_dc.csv")
-    bc_order = bc_order_df["node_id"].astype(int).tolist()
-    dc_order = dc_order_df["node_id"].astype(int).tolist()
-    print(f"      BC order: {bc_order}")
-    print(f"      DC order: {dc_order}")
+    # ── PART A: Tipping Point Scans ───────────────────────────────────────────
+    print("\n" + "─" * 65)
+    print("[2/4] PART A — Tipping Point Scan")
+    print("─" * 65)
 
-    # ── BC strategy ────────────────────────────────────────────────────────────
-    print("\n[3/5] Running BC (Betweenness Centrality) targeted removal...")
-    print("-" * 65)
-    bc_df, bc_assignments, bc_tip = run_percolation_loop(
-        G_lcc, bc_order, strategy_name="bc", seed=42
-    )
+    bc_tip = find_tipping_point(G_lcc, bc_order, strategy="BC", seed=42)
+    dc_tip = find_tipping_point(G_lcc, dc_order, strategy="DC", seed=42)
 
-    if bc_tip is not None:
-        print(f"\n      *** BC Tipping Point: k={bc_tip} ***")
-        tip_row = bc_df[bc_df["k"] == bc_tip].iloc[0]
-        sizes = json.loads(tip_row["community_sizes_json"])
-        print(f"          Causal node: {int(tip_row['removed_node_id'])}")
-        print(f"          Component sizes at k={bc_tip}: {sizes[:10]}")
-    else:
-        print("\n      No tipping point detected in k=1..10 for BC strategy.")
-
-    # ── DC strategy ────────────────────────────────────────────────────────────
-    print("\n[4/5] Running DC (Degree Centrality) targeted removal...")
-    print("-" * 65)
-    dc_df, dc_assignments, dc_tip = run_percolation_loop(
-        G_lcc, dc_order, strategy_name="dc", seed=42
-    )
-
-    if dc_tip is not None:
-        print(f"\n      *** DC Tipping Point: k={dc_tip} ***")
-        tip_row = dc_df[dc_df["k"] == dc_tip].iloc[0]
-        sizes = json.loads(tip_row["community_sizes_json"])
-        print(f"          Causal node: {int(tip_row['removed_node_id'])}")
-        print(f"          Component sizes at k={dc_tip}: {sizes[:10]}")
-    else:
-        print("\n      No tipping point detected in k=1..10 for DC strategy.")
-
-    # ── Save all outputs ───────────────────────────────────────────────────────
-    print("\n[5/5] Saving outputs...")
-
-    bc_df.to_csv(OUT / "percolation_bc.csv", index=False)
-    dc_df.to_csv(OUT / "percolation_dc.csv", index=False)
-    print("      percolation_bc.csv  ✓")
-    print("      percolation_dc.csv  ✓")
-
-    with open(OUT / "community_assignments_bc.pkl", "wb") as f:
-        pickle.dump(bc_assignments, f, protocol=4)
-    with open(OUT / "community_assignments_dc.pkl", "wb") as f:
-        pickle.dump(dc_assignments, f, protocol=4)
-    print("      community_assignments_bc.pkl  ✓")
-    print("      community_assignments_dc.pkl  ✓")
-
-    tipping_records = [
-        compute_tipping_summary(bc_df, "bc"),
-        compute_tipping_summary(dc_df, "dc"),
-    ]
-    tipping_df = pd.DataFrame(tipping_records)
+    # Save tipping point summary
+    tipping_rows = []
+    for strategy, result in [("BC", bc_tip), ("DC", dc_tip)]:
+        tipping_rows.append({
+            "strategy":                 strategy,
+            "tipping_k":               result["tipping_k"],
+            "causal_node_id":          result["causal_node_id"],
+            "component_sizes_json":    json.dumps(result["component_sizes"]),
+        })
+    tipping_df = pd.DataFrame(tipping_rows)
     tipping_df.to_csv(OUT / "tipping_points.csv", index=False)
-    print("      tipping_points.csv  ✓")
+
+    # Save Louvain assignments at tipping point
+    for strategy, result in [("bc", bc_tip), ("dc", dc_tip)]:
+        fname = OUT / f"community_assignments_{strategy}_tipping.pkl"
+        with open(fname, "wb") as f:
+            pickle.dump(result["community_assignment"], f, protocol=4)
+
+    # ── PART B: Full-Attack Snapshots ─────────────────────────────────────────
+    print("\n" + "─" * 65)
+    print("[3/4] PART B — Full-Attack Snapshot (remove all 10 nodes)")
+    print("─" * 65)
+
+    bc_full = full_attack_snapshot(G_lcc, bc_order, strategy="BC", seed=42)
+    dc_full = full_attack_snapshot(G_lcc, dc_order, strategy="DC", seed=42)
+
+    # Save post-attack summaries as CSV
+    for strategy, result in [("bc", bc_full), ("dc", dc_full)]:
+        row = {k: v for k, v in result.items()
+               if k not in ("community_assignment",)}
+        row["component_sizes_json"] = json.dumps(row.pop("component_sizes"))
+        row["community_sizes_json"] = json.dumps(row.pop("community_sizes"))
+        row["actually_removed"]     = json.dumps(row["actually_removed"])
+        pd.DataFrame([row]).to_csv(OUT / f"post_attack_{strategy}.csv", index=False)
+
+    # Save community assignments at k=10
+    for strategy, result in [("bc", bc_full), ("dc", dc_full)]:
+        fname = OUT / f"community_assignments_{strategy}_full.pkl"
+        with open(fname, "wb") as f:
+            pickle.dump(result["community_assignment"], f, protocol=4)
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print("\n" + "─" * 65)
+    print("[4/4] All outputs saved:")
+    for f in sorted(OUT.glob("*.csv")) + sorted(OUT.glob("*.pkl")):
+        print(f"      {f.name}")
 
     print("\n" + "=" * 65)
     print("Done.")

@@ -1,22 +1,25 @@
 """
 script_04_geodviz.py
 ====================
-Geographic scatter-plot maps of the Seattle street network, colored by
-Louvain community membership, at two snapshots per strategy:
-  - At the tipping point k (first new component appears)
-  - At k=10 (final state)
+Geographic scatter-plot maps of the Seattle street network colored by Louvain
+community membership. Produces one map per strategy × snapshot:
+
+  map_bc_tipping.png   — BC attack, network state at the tipping point k
+  map_bc_full.png      — BC attack, network state after all 10 nodes removed
+  map_dc_tipping.png   — DC attack, network state at the tipping point k
+  map_dc_full.png      — DC attack, network state after all 10 nodes removed
 
 Coordinates are WA State Plane North (EPSG:2926, US survey feet).
-Plotted directly as X/Y — no reprojection needed for relative geometry.
+Plotted directly on X/Y axes — no reprojection needed.
 
 Run AFTER script_02_percolation.py:
     python scripts/script_04_geodviz.py
 
 Outputs (written to output/figures/):
-    map_bc_k_tipping.png
-    map_bc_k10.png
-    map_dc_k_tipping.png
-    map_dc_k10.png
+    map_bc_tipping.png
+    map_bc_full.png
+    map_dc_tipping.png
+    map_dc_full.png
 """
 
 import matplotlib
@@ -24,13 +27,11 @@ matplotlib.use("Agg")
 
 import pickle
 import pathlib
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
 ROOT    = pathlib.Path(__file__).parent.parent
 OUT     = ROOT / "output"
 FIGURES = OUT / "figures"
@@ -41,14 +42,15 @@ FIG_SIZE = (10, 12)
 
 
 def build_node_df(G_lcc: nx.Graph,
-                  assignment: dict[int, int]) -> pd.DataFrame:
+                  assignment: dict) -> pd.DataFrame:
     """
-    Build a DataFrame of survived nodes with coordinates and community ID.
+    Build a DataFrame of nodes that survived the attack, with coordinates
+    and their assigned Louvain community index.
 
     Parameters
     ----------
-    G_lcc      : original LCC graph (for coordinate lookup on all nodes)
-    assignment : {node_id: community_index} for nodes remaining after attack
+    G_lcc      : original LCC (coordinate source for all nodes)
+    assignment : {node_id: community_index} — keys are survived nodes only
 
     Returns
     -------
@@ -58,42 +60,43 @@ def build_node_df(G_lcc: nx.Graph,
     for node_id, comm_idx in assignment.items():
         attr = G_lcc.nodes[node_id]
         rows.append({
-            "node_id":     node_id,
-            "longitude":   attr["longitude"],
-            "latitude":    attr["latitude"],
+            "node_id":      node_id,
+            "longitude":    attr["longitude"],
+            "latitude":     attr["latitude"],
             "community_id": comm_idx,
         })
     return pd.DataFrame(rows)
 
 
 def plot_community_map(G_lcc: nx.Graph,
-                       assignment: dict[int, int],
+                       assignment: dict,
                        removal_order_df: pd.DataFrame,
                        k: int,
                        strategy: str,
+                       snapshot_label: str,
                        save_path: pathlib.Path):
     """
-    Produce a geographic scatter map colored by community.
+    Render a geographic scatter map colored by Louvain community.
 
-    Survived nodes are scattered in community colors; removed nodes shown
-    as red X markers with node-ID annotations.
+    Survived nodes are scattered in community colors. The k removed nodes
+    are shown as red X markers with rank and node-ID labels.
 
     Parameters
     ----------
-    G_lcc            : original LCC (coordinate source)
-    assignment       : {node_id: community_index} at this k
-    removal_order_df : DataFrame with columns node_id, longitude, latitude
-                       (full 10-node removal order; first k rows are removed)
-    k                : number of nodes removed
+    G_lcc            : original LCC (coordinate lookup)
+    assignment       : {node_id: community_index} for survived nodes
+    removal_order_df : full 10-row removal order (node_id, longitude, latitude)
+    k                : how many nodes were removed in this snapshot
     strategy         : 'BC' or 'DC'
+    snapshot_label   : 'Tipping Point' or 'Full Attack (k=10)'
     save_path        : output PNG path
     """
     survived_df = build_node_df(G_lcc, assignment)
+    removed_df  = removal_order_df.iloc[:k].copy().reset_index(drop=True)
+
     num_communities = survived_df["community_id"].nunique()
 
-    removed_df = removal_order_df.iloc[:k].copy()
-
-    # ── Colormap for communities ───────────────────────────────────────────────
+    # Build colormap — tab20 handles up to 20 categories cleanly
     if num_communities <= 20:
         cmap = plt.cm.get_cmap("tab20", num_communities)
     else:
@@ -101,128 +104,131 @@ def plot_community_map(G_lcc: nx.Graph,
 
     fig, ax = plt.subplots(figsize=FIG_SIZE)
 
-    # ── Scatter survived nodes ─────────────────────────────────────────────────
+    # ── Survived nodes colored by community ───────────────────────────────────
     for comm_id in sorted(survived_df["community_id"].unique()):
         subset = survived_df[survived_df["community_id"] == comm_id]
         ax.scatter(subset["longitude"], subset["latitude"],
                    c=[cmap(comm_id % num_communities)],
                    s=1.5, alpha=0.55, linewidths=0, rasterized=True)
 
-    # ── Overlay removed nodes ──────────────────────────────────────────────────
+    # ── Removed nodes as red X markers ────────────────────────────────────────
     ax.scatter(removed_df["longitude"], removed_df["latitude"],
-               c="red", marker="x", s=120, linewidths=2.5,
-               zorder=5, label=f"Removed nodes (k={k})")
+               c="red", marker="x", s=140, linewidths=2.5,
+               zorder=5, label=f"Removed nodes  (n={k})")
 
-    # Annotate each removed node with its node_id and rank
-    for rank_idx, row in removed_df.iterrows():
-        rank = rank_idx + 1  # 1-based rank within removal_order_df
+    for i, row in removed_df.iterrows():
         ax.annotate(
-            f" #{rank} (id {int(row['node_id'])})",
+            f" #{i+1}  (node {int(row['node_id'])})",
             xy=(row["longitude"], row["latitude"]),
-            fontsize=7, color="darkred", fontweight="bold",
-            xytext=(6, 3), textcoords="offset points",
-            zorder=6,
+            fontsize=7.5, color="darkred", fontweight="bold",
+            xytext=(6, 3), textcoords="offset points", zorder=6,
         )
 
-    # ── Legend for removed nodes ───────────────────────────────────────────────
-    removed_patch = mpatches.Patch(color="red", label=f"Removed nodes (k={k})")
-    ax.legend(handles=[removed_patch], loc="lower right", fontsize=10)
-
-    # ── Labels and formatting ──────────────────────────────────────────────────
-    ax.set_aspect("equal")
-    ax.set_xlabel("Easting  (ft, EPSG:2926 — WA State Plane North)", fontsize=11)
-    ax.set_ylabel("Northing  (ft, EPSG:2926 — WA State Plane North)", fontsize=11)
-    ax.set_title(
-        f"Seattle Street Network — {strategy} Attack,  k = {k}\n"
-        f"{num_communities} Louvain communities  |  "
-        f"{len(survived_df):,} surviving nodes  |  "
-        f"{k} node(s) removed",
-        fontsize=13,
-    )
-    ax.tick_params(axis="both", labelsize=8)
-
-    # Colorbar legend for communities
+    # ── Colorbar for community index ──────────────────────────────────────────
     sm = plt.cm.ScalarMappable(
         cmap=cmap,
-        norm=plt.Normalize(vmin=0, vmax=num_communities - 1)
+        norm=plt.Normalize(vmin=0, vmax=max(num_communities - 1, 1))
     )
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.04)
-    cbar.set_label("Community index", fontsize=10)
+    cbar.set_label("Louvain community index", fontsize=10)
     cbar.ax.tick_params(labelsize=8)
+
+    # ── Formatting ────────────────────────────────────────────────────────────
+    removed_patch = mpatches.Patch(color="red", label=f"Removed nodes  (n={k})")
+    ax.legend(handles=[removed_patch], loc="lower right", fontsize=10)
+
+    ax.set_aspect("equal")
+    ax.set_xlabel("Easting  (ft, EPSG:2926 — WA State Plane North)", fontsize=10)
+    ax.set_ylabel("Northing  (ft, EPSG:2926 — WA State Plane North)", fontsize=10)
+    ax.tick_params(axis="both", labelsize=8)
+    ax.set_title(
+        f"Seattle Street Network — {strategy} Attack  |  {snapshot_label}\n"
+        f"{num_communities} Louvain communities  ·  "
+        f"{len(survived_df):,} surviving nodes  ·  "
+        f"{k} node(s) removed",
+        fontsize=12,
+    )
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"      Saved: {save_path.name}  "
+    print(f"  Saved: {save_path.name}  "
           f"({num_communities} communities, k={k})")
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     print("=" * 60)
     print("Script 04 — Geographic Community Maps")
     print("=" * 60)
 
-    # Load inputs
-    print("\n[1/3] Loading graph, community assignments, and tipping points...")
+    print("\n[1/3] Loading inputs...")
     with open(OUT / "lcc_graph.pkl", "rb") as f:
         G_lcc = pickle.load(f)
-    with open(OUT / "community_assignments_bc.pkl", "rb") as f:
-        bc_assignments = pickle.load(f)
-    with open(OUT / "community_assignments_dc.pkl", "rb") as f:
-        dc_assignments = pickle.load(f)
 
     bc_order_df = pd.read_csv(OUT / "removal_order_bc.csv")
     dc_order_df = pd.read_csv(OUT / "removal_order_dc.csv")
 
-    tips = pd.read_csv(OUT / "tipping_points.csv")
+    tips_df = pd.read_csv(OUT / "tipping_points.csv")
 
-    def get_tip(strategy: str) -> int | None:
-        row = tips[tips["strategy"] == strategy]
-        val = row["tipping_k"].values[0]
-        return None if pd.isna(val) else int(val)
+    def get_tip(strategy: str):
+        row = tips_df[tips_df["strategy"] == strategy].iloc[0]
+        return None if pd.isna(row["tipping_k"]) else int(row["tipping_k"])
 
-    bc_tip = get_tip("bc")
-    dc_tip = get_tip("dc")
-    print(f"      BC tipping point: k={bc_tip}")
-    print(f"      DC tipping point: k={dc_tip}")
+    bc_tip = get_tip("BC")
+    dc_tip = get_tip("DC")
+    print(f"  BC tipping k = {bc_tip}")
+    print(f"  DC tipping k = {dc_tip}")
+    print(f"  LCC graph: {G_lcc.number_of_nodes():,} nodes")
 
-    print(f"\n      LCC graph: {G_lcc.number_of_nodes()} nodes")
-
-    # Generate maps
-    print("\n[2/3] Generating geographic maps...")
+    print("\n[2/3] Generating maps...")
 
     configs = [
-        # (strategy_label, assignments_dict, order_df, tipping_k, k_list)
-        ("BC", bc_assignments, bc_order_df, bc_tip),
-        ("DC", dc_assignments, dc_order_df, dc_tip),
+        # (strategy_label, order_df, tipping_k, tipping_pkl, full_pkl)
+        ("BC", bc_order_df, bc_tip,
+         OUT / "community_assignments_bc_tipping.pkl",
+         OUT / "community_assignments_bc_full.pkl"),
+        ("DC", dc_order_df, dc_tip,
+         OUT / "community_assignments_dc_tipping.pkl",
+         OUT / "community_assignments_dc_full.pkl"),
     ]
 
-    for strategy, assignments, order_df, tip in configs:
-        k_snapshots = []
-        if tip is not None and tip != 10:
-            k_snapshots.append((tip, "k_tipping"))
-        elif tip is not None:
-            k_snapshots.append((tip, "k_tipping"))   # tip == 10: same as k10
-        else:
-            print(f"      {strategy}: no tipping point — skipping tipping map")
-        k_snapshots.append((10, "k10"))
+    for strategy, order_df, tip_k, tipping_pkl, full_pkl in configs:
 
-        for k_val, suffix in k_snapshots:
-            fname = f"map_{strategy.lower()}_{suffix}.png"
+        # Map at tipping point
+        if tip_k is not None:
+            with open(tipping_pkl, "rb") as f:
+                tip_assignment = pickle.load(f)
             plot_community_map(
-                G_lcc=G_lcc,
-                assignment=assignments[k_val],
-                removal_order_df=order_df,
-                k=k_val,
-                strategy=strategy,
-                save_path=FIGURES / fname,
+                G_lcc          = G_lcc,
+                assignment     = tip_assignment,
+                removal_order_df = order_df,
+                k              = tip_k,
+                strategy       = strategy,
+                snapshot_label = f"Tipping Point  (k={tip_k})",
+                save_path      = FIGURES / f"map_{strategy.lower()}_tipping.png",
             )
+        else:
+            print(f"  [{strategy}] No tipping point — skipping tipping map.")
 
-    print("\n[3/3] Summary of generated maps:")
+        # Map at k=10 (full attack)
+        with open(full_pkl, "rb") as f:
+            full_assignment = pickle.load(f)
+        plot_community_map(
+            G_lcc          = G_lcc,
+            assignment     = full_assignment,
+            removal_order_df = order_df,
+            k              = len(order_df),
+            strategy       = strategy,
+            snapshot_label = f"Full Attack  (k={len(order_df)})",
+            save_path      = FIGURES / f"map_{strategy.lower()}_full.png",
+        )
+
+    print("\n[3/3] Maps generated:")
     for f in sorted(FIGURES.glob("map_*.png")):
-        print(f"      {f.name}")
+        print(f"  {f.name}")
 
     print("\n" + "=" * 60)
     print("Done. All maps saved to output/figures/")
