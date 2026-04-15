@@ -116,7 +116,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Build full graph
-    print("\n[1/4] Reading node and edge CSVs...")
+    print("\n[1/5] Reading node and edge CSVs...")
     G = build_graph_from_csvs(DATA / "node_list_dc_btwn.csv",
                                DATA / "edge_list.csv")
     print(f"      Full graph: {G.number_of_nodes()} nodes, "
@@ -124,7 +124,7 @@ if __name__ == "__main__":
           f"{nx.number_connected_components(G)} component(s)")
 
     # Extract LCC
-    print("\n[2/4] Extracting Largest Connected Component...")
+    print("\n[2/5] Extracting Largest Connected Component...")
     G_lcc = extract_lcc(G)
     print(f"      LCC: {G_lcc.number_of_nodes()} nodes, "
           f"{G_lcc.number_of_edges()} edges, "
@@ -134,13 +134,13 @@ if __name__ == "__main__":
     print(f"      Nodes outside LCC (dropped): {isolated}")
 
     # Save LCC pickle
-    print("\n[3/4] Saving LCC graph to output/lcc_graph.pkl...")
+    print("\n[3/5] Saving LCC graph to output/lcc_graph.pkl...")
     with open(OUT / "lcc_graph.pkl", "wb") as f:
         pickle.dump(G_lcc, f, protocol=4)
     print("      Saved.")
 
     # Load and save removal orders
-    print("\n[4/4] Saving removal order CSVs...")
+    print("\n[4/5] Saving removal order CSVs...")
 
     bc_order = load_removal_order(
         DATA / "central_nodes_btwn.csv",
@@ -164,9 +164,57 @@ if __name__ == "__main__":
         print(f"        rank {int(r['rank'])}: node {int(r['node_id'])}  "
               f"DC={r['degree_centrality']:.1f}")
 
+    # Articulation point analysis
+    print("\n[5/5] Computing articulation points (cut vertices)...")
+    ap_set = set(nx.articulation_points(G_lcc))
+    print(f"      {len(ap_set):,} articulation points in LCC "
+          f"({len(ap_set) / G_lcc.number_of_nodes():.2%} of nodes)")
+
+    # Save articulation points CSV
+    ap_rows = []
+    for node_id in ap_set:
+        attr = G_lcc.nodes[node_id]
+        ap_rows.append({
+            "node_id":   node_id,
+            "longitude": attr["longitude"],
+            "latitude":  attr["latitude"],
+        })
+    ap_df = pd.DataFrame(ap_rows).sort_values("node_id").reset_index(drop=True)
+    ap_df.to_csv(OUT / "articulation_points.csv", index=False)
+    print(f"      Saved articulation_points.csv ({len(ap_df):,} rows)")
+
+    # Cross-reference removal orders with articulation points
+    def ap_check(order_df: pd.DataFrame, ap_set: set, strategy: str):
+        print(f"\n      {strategy} removal order — cut vertex check:")
+        any_ap = False
+        for _, r in order_df.iterrows():
+            nid = int(r["node_id"])
+            tag = "[CUT VERTEX]" if nid in ap_set else "[not AP]    "
+            print(f"        rank {int(r['rank']):2d}: node {nid:6d}  {tag}")
+            if nid in ap_set:
+                any_ap = True
+        if not any_ap:
+            print(f"        --> None of the top-{len(order_df)} {strategy} nodes are cut vertices.")
+        return any_ap
+
+    bc_has_ap = ap_check(bc_order, ap_set, "BC")
+    dc_has_ap = ap_check(dc_order, ap_set, "DC")
+
+    print()
+    if dc_has_ap and not bc_has_ap:
+        print("      FINDING: DC nodes include cut vertices; BC nodes do not.")
+        print("      This explains why DC attack fractures the network faster.")
+    elif bc_has_ap and not dc_has_ap:
+        print("      FINDING: BC nodes include cut vertices; DC nodes do not.")
+    elif bc_has_ap and dc_has_ap:
+        print("      FINDING: Both BC and DC removal orders include cut vertices.")
+    else:
+        print("      FINDING: Neither BC nor DC top nodes are cut vertices.")
+
     print("\n" + "=" * 60)
     print("Done. Outputs written to output/")
     print("  output/lcc_graph.pkl")
     print("  output/removal_order_bc.csv")
     print("  output/removal_order_dc.csv")
+    print("  output/articulation_points.csv")
     print("=" * 60)

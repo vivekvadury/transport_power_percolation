@@ -30,7 +30,9 @@ Outputs (written to output/):
 
 import json
 import pickle
+import random
 import pathlib
+import numpy as np
 import pandas as pd
 import networkx as nx
 import networkx.algorithms.community as nx_comm
@@ -193,6 +195,98 @@ def full_attack_snapshot(G_lcc: nx.Graph,
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PART C — Louvain Stability Check
+# ══════════════════════════════════════════════════════════════════════════════
+
+def louvain_stability_check(G_attacked: nx.Graph,
+                            strategy: str,
+                            seeds: range = range(10)) -> dict:
+    """
+    Run Louvain 10 times with different seeds on a post-attack graph.
+
+    Quantifies how sensitive the community partition is to the algorithm's
+    stochastic element. Low std relative to mean indicates a robust partition
+    that does not depend heavily on the random seed.
+
+    Parameters
+    ----------
+    G_attacked : post-attack graph (already has nodes removed)
+    strategy   : 'BC' or 'DC' (for console output only)
+    seeds      : iterable of integer seeds to try
+
+    Returns
+    -------
+    dict with keys:
+        strategy, mean_communities, std_communities,
+        min_communities, max_communities,
+        mean_modularity, std_modularity
+    """
+    counts       = []
+    modularities = []
+
+    print(f"\n  [{strategy}] Running Louvain stability check (seeds 0-9)...")
+    for seed in seeds:
+        communities = nx_comm.louvain_communities(G_attacked, seed=seed)
+        counts.append(len(communities))
+        modularities.append(nx_comm.modularity(G_attacked, communities))
+
+    result = {
+        "strategy":         strategy,
+        "mean_communities": float(np.mean(counts)),
+        "std_communities":  float(np.std(counts)),
+        "min_communities":  int(min(counts)),
+        "max_communities":  int(max(counts)),
+        "mean_modularity":  float(np.mean(modularities)),
+        "std_modularity":   float(np.std(modularities)),
+    }
+
+    print(f"    Communities: {result['mean_communities']:.1f} +/- {result['std_communities']:.2f}  "
+          f"(range {result['min_communities']}–{result['max_communities']})")
+    print(f"    Modularity:  {result['mean_modularity']:.4f} +/- {result['std_modularity']:.4f}")
+
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PART D — Sampled Average Path Length (BC attack only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def sampled_avg_path_length(G: nx.Graph,
+                            sample_size: int = 500,
+                            seed: int = 42) -> float:
+    """
+    Estimate average shortest-path length by BFS from a random sample of nodes.
+
+    Only valid on a connected graph — pass the LCC or a single component.
+    Uses sampling because full APSP on 21k nodes is prohibitively slow.
+
+    Parameters
+    ----------
+    G           : connected graph to measure
+    sample_size : number of source nodes to sample (more = more accurate)
+    seed        : random seed for source selection
+
+    Returns
+    -------
+    Estimated average shortest-path length (float)
+    """
+    rng     = random.Random(seed)
+    nodes   = list(G.nodes())
+    sources = rng.sample(nodes, min(sample_size, len(nodes)))
+
+    total = 0
+    count = 0
+    for source in sources:
+        lengths = nx.single_source_shortest_path_length(G, source)
+        for target, length in lengths.items():
+            if target != source:
+                total += length
+                count += 1
+
+    return total / count if count > 0 else 0.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -202,7 +296,7 @@ if __name__ == "__main__":
     print("=" * 65)
 
     # Load inputs
-    print("\n[1/4] Loading LCC graph and removal orders...")
+    print("\n[1/6] Loading LCC graph and removal orders...")
     with open(OUT / "lcc_graph.pkl", "rb") as f:
         G_lcc = pickle.load(f)
     bc_order = pd.read_csv(OUT / "removal_order_bc.csv")["node_id"].astype(int).tolist()
@@ -213,7 +307,7 @@ if __name__ == "__main__":
 
     # ── PART A: Tipping Point Scans ───────────────────────────────────────────
     print("\n" + "─" * 65)
-    print("[2/4] PART A — Tipping Point Scan")
+    print("[2/6] PART A — Tipping Point Scan")
     print("─" * 65)
 
     bc_tip = find_tipping_point(G_lcc, bc_order, strategy="BC", seed=42)
@@ -239,7 +333,7 @@ if __name__ == "__main__":
 
     # ── PART B: Full-Attack Snapshots ─────────────────────────────────────────
     print("\n" + "─" * 65)
-    print("[3/4] PART B — Full-Attack Snapshot (remove all 10 nodes)")
+    print("[3/6] PART B — Full-Attack Snapshot (remove all 10 nodes)")
     print("─" * 65)
 
     bc_full = full_attack_snapshot(G_lcc, bc_order, strategy="BC", seed=42)
@@ -260,9 +354,71 @@ if __name__ == "__main__":
         with open(fname, "wb") as f:
             pickle.dump(result["community_assignment"], f, protocol=4)
 
+    # ── PART C: Louvain Stability Check ──────────────────────────────────────
+    print("\n" + "─" * 65)
+    print("[4/6] PART C — Louvain Stability Check (10 seeds each strategy)")
+    print("─" * 65)
+
+    # Re-build post-attack graphs for stability check
+    G_bc_attacked = G_lcc.copy()
+    G_bc_attacked.remove_nodes_from([n for n in bc_order if n in G_bc_attacked])
+
+    G_dc_attacked = G_lcc.copy()
+    G_dc_attacked.remove_nodes_from([n for n in dc_order if n in G_dc_attacked])
+
+    bc_stability = louvain_stability_check(G_bc_attacked, strategy="BC")
+    dc_stability = louvain_stability_check(G_dc_attacked, strategy="DC")
+
+    stability_df = pd.DataFrame([bc_stability, dc_stability])
+    stability_df.to_csv(OUT / "louvain_stability.csv", index=False)
+    print(f"\n  Saved: louvain_stability.csv")
+
+    # ── PART D: Path Length Analysis (BC only — graph stays connected) ────────
+    print("\n" + "─" * 65)
+    print("[5/6] PART D — Average Path Length  (BC attack; 500-node sample)")
+    print("─" * 65)
+    print("  Note: this may take 2-4 minutes depending on hardware.")
+
+    print("\n  Computing baseline average path length (G_lcc)...")
+    baseline_apl = sampled_avg_path_length(G_lcc, sample_size=500, seed=42)
+    print(f"    Baseline APL:        {baseline_apl:.4f}")
+
+    print("  Computing post-BC-attack APL (10 nodes removed)...")
+    bc_apl     = sampled_avg_path_length(G_bc_attacked, sample_size=500, seed=42)
+    pct_change = (bc_apl - baseline_apl) / baseline_apl * 100
+    print(f"    Post-BC APL:         {bc_apl:.4f}")
+    print(f"    Change:              {pct_change:+.2f}%")
+
+    if pct_change > 0:
+        print(f"\n  FINDING: BC attack increased average travel distance by "
+              f"{pct_change:.1f}% without severing the network.")
+    else:
+        print(f"\n  FINDING: BC attack had minimal effect on average path length.")
+
+    # Skip DC: graph is disconnected at k=10 — APL on full graph is undefined.
+    # The DC finding (fracture at k=3) already tells the efficiency story.
+    print("\n  [DC skipped — graph is disconnected at k=10; "
+          "APL is undefined across components]")
+
+    apl_df = pd.DataFrame([{
+        "graph":              "baseline",
+        "strategy":           "—",
+        "avg_path_length":    baseline_apl,
+        "pct_change_vs_base": 0.0,
+        "sample_size":        500,
+    }, {
+        "graph":              "post_attack",
+        "strategy":           "BC",
+        "avg_path_length":    bc_apl,
+        "pct_change_vs_base": pct_change,
+        "sample_size":        500,
+    }])
+    apl_df.to_csv(OUT / "path_length_analysis.csv", index=False)
+    print("  Saved: path_length_analysis.csv")
+
     # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "─" * 65)
-    print("[4/4] All outputs saved:")
+    print("[6/6] All outputs saved:")
     for f in sorted(OUT.glob("*.csv")) + sorted(OUT.glob("*.pkl")):
         print(f"      {f.name}")
 
