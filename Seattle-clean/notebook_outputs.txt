@@ -1,54 +1,54 @@
 ================================================================================
 NOTEBOOK OUTPUT LOG
-Notebook: 2-NetworkX-Target-approxBC-v-Random.ipynb
-Date: 2026-02-04 16:47:36
+Notebook: 2-NetworkX-Target-approxBC-v-Random.py
+Date: 2026-04-14 14:46:22
 ================================================================================
 
 ✓ Output logging initialized - all outputs will be saved to notebook_outputs.txt
-⏱ Cell runtime: 0.018 seconds
-Maximum Betweenness Centrality: 180918375.89595225
+⏱ Cell runtime: 0.020 seconds
+Maximum Betweenness Centrality: 130030977.66283754
 Minimum Betweenness Centrality: 0.0
-Average Betweenness Centrality: 915947.3797754961
+Average Betweenness Centrality: 678339.4266447242
 ⏱ Cell runtime: 0.000 seconds
-Number of nodes in NetworkX graph: 21202
-Number of edges in NetworkX graph: 32061
-⏱ Cell runtime: 4.813 seconds
-Node with maximum betweenness centrality: 15619.0
-Maximum betweenness centrality value: 180918375.89595225
+Number of nodes in NetworkX graph: 37666
+Number of edges in NetworkX graph: 34804
+⏱ Cell runtime: 6.536 seconds
+Node with maximum betweenness centrality: 398.0
+Maximum betweenness centrality value: 130030977.66283754
 dict_keys(['Weight'])
-Number of nodes in NetworkX subgraph: 21197
-Number of edges in NetworkX subgraph: 32057
-⏱ Cell runtime: 0.159 seconds
-Total Number of Edges in Network:  32061
-Number of Edges in Subnetwork:  32057
-Total Number of Nodes in Network:  21202
-Number of Nodes in Subnetwork:  21197
-Average degree of Network =  3.0243373266672955
-Average degree of Subnetwork =  3.0246733028258714
+Number of nodes in NetworkX subgraph: 16091
+Number of edges in NetworkX subgraph: 16304
+⏱ Cell runtime: 0.119 seconds
+Total Number of Edges in Network:  34804
+Number of Edges in Subnetwork:  16304
+Total Number of Nodes in Network:  37666
+Number of Nodes in Subnetwork:  16091
+Average degree of Network =  1.848032708543514
+Average degree of Subnetwork =  2.026474426698154
 Minimum clustering coefficient: 0
-Maximum clustering coefficient: 0.6666666666666666
-Average Clustering Coefficient of Network =  0.029212091401979147
-Average Clustering Coefficient of Subnetwork =  0.029218982021265362
+Maximum clustering coefficient: 0.3333333333333333
+Average Clustering Coefficient of Network =  0.0023342553303260572
+Average Clustering Coefficient of Subnetwork =  0.0007380641648244656
 Minimum degree: 1
-Maximum degree: 8
-Node with maximum betweenness centrality: 15619.0
-Maximum betweenness centrality value: 180918375.89595225
+Maximum degree: 9
+Node with maximum betweenness centrality: 398.0
+Maximum betweenness centrality value: 130030977.66283754
 Completed 50 degree-based targeted attack simulations
-Mean core proportion: [1.00000000e+00 9.99952824e-01 9.99883002e-01 ... 4.71764872e-05
- 4.71764872e-05 4.71764872e-05]
-⏱ Cell runtime: 9710.404 seconds
+Mean core proportion: [1.00000000e+00 9.95283077e-01 9.89156671e-01 ... 6.21465415e-05
+ 6.21465415e-05 6.21465415e-05]
+⏱ Cell runtime: 5496.242 seconds
 Value of M: 1
 Number of nodes removed in first 3 steps: 3
 completed targeted attack by betweenness centrality (static)
-⏱ Cell runtime: 923.303 seconds
+⏱ Cell runtime: 186.046 seconds
 completed targeted attacks by betweenness centrality (dynamic)
-⏱ Cell runtime: 6485.780 seconds
+⏱ Cell runtime: 1794.599 seconds
 Completed 50 random attack simulations
-Mean core proportion: [1.00000000e+00 9.99936784e-01 9.99884889e-01 ... 4.71764872e-05
- 4.71764872e-05 4.71764872e-05]
-⏱ Cell runtime: 4738.265 seconds
+Mean core proportion: [1.00000000e+00 9.99731527e-01 9.99387235e-01 ... 6.21465415e-05
+ 6.21465415e-05 6.21465415e-05]
+⏱ Cell runtime: 2718.929 seconds
 
 ================================================================================
 END OF NOTEBOOK OUTPUT LOG
-Completed: 2026-02-04 22:52:00
+Completed: 2026-04-14 17:36:26
 ================================================================================
