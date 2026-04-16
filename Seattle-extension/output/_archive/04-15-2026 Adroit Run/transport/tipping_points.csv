@@ -1,0 +1,3 @@
+strategy,tipping_k,causal_node_id,component_sizes_json
+BC,,,[]
+DC,3.0,2373.0,"[21192, 1, 1]"

@@ -34,6 +34,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
+from pyproj import Transformer
+
+# Transport coordinates are EPSG:2926 (WA State Plane North, US survey feet).
+# Power coordinates are already WGS84 (lon/lat).
+# Reproject transport to WGS84 so both networks share the same coordinate space.
+_TO_WGS84 = Transformer.from_crs("EPSG:2926", "EPSG:4326", always_xy=True)
+
+def reproject(x, y, network: str):
+    """Return (longitude, latitude) in WGS84 decimal degrees."""
+    if network == "transport":
+        return _TO_WGS84.transform(x, y)   # (easting_ft, northing_ft) → (lon, lat)
+    return x, y                             # power is already WGS84
 
 ROOT     = pathlib.Path(__file__).parent.parent
 OUT      = ROOT / "output"
@@ -49,30 +61,31 @@ FIG_SIZE = (10, 12)
 # Per-network metadata
 NETWORKS = {
     "transport": {
-        "out_dir":      OUT / "transport",
-        "fig_dir":      FIG_T,
-        "xlabel":       "Easting  (ft, EPSG:2926 — WA State Plane North)",
-        "ylabel":       "Northing  (ft, EPSG:2926 — WA State Plane North)",
+        "out_dir": OUT / "transport",
+        "fig_dir": FIG_T,
+        "xlabel":  "Longitude  (decimal degrees, WGS84)",
+        "ylabel":  "Latitude   (decimal degrees, WGS84)",
     },
     "power": {
-        "out_dir":      OUT / "power",
-        "fig_dir":      FIG_P,
-        "xlabel":       "Longitude  (decimal degrees, WGS84)",
-        "ylabel":       "Latitude   (decimal degrees, WGS84)",
+        "out_dir": OUT / "power",
+        "fig_dir": FIG_P,
+        "xlabel":  "Longitude  (decimal degrees, WGS84)",
+        "ylabel":  "Latitude   (decimal degrees, WGS84)",
     },
 }
 
 
 # ── Core map function ──────────────────────────────────────────────────────────
 
-def build_node_df(G_lcc: nx.Graph, assignment: dict) -> pd.DataFrame:
+def build_node_df(G_lcc: nx.Graph, assignment: dict, network: str) -> pd.DataFrame:
     rows = []
     for node_id, comm_idx in assignment.items():
         attr = G_lcc.nodes[node_id]
+        lon, lat = reproject(attr["longitude"], attr["latitude"], network)
         rows.append({
             "node_id":      node_id,
-            "longitude":    attr["longitude"],
-            "latitude":     attr["latitude"],
+            "longitude":    lon,
+            "latitude":     lat,
             "community_id": comm_idx,
         })
     return pd.DataFrame(rows)
@@ -98,8 +111,17 @@ def plot_community_map(G_lcc: nx.Graph,
     if standalone:
         fig, ax = plt.subplots(figsize=FIG_SIZE)
 
-    survived_df = build_node_df(G_lcc, assignment)
+    survived_df = build_node_df(G_lcc, assignment, network)
     removed_df  = removal_order_df.iloc[:k].copy().reset_index(drop=True)
+    # Reproject removed-node coordinates to WGS84 if needed
+    if network == "transport":
+        lons, lats = _TO_WGS84.transform(
+            removed_df["longitude"].values,
+            removed_df["latitude"].values,
+        )
+        removed_df = removed_df.copy()
+        removed_df["longitude"] = lons
+        removed_df["latitude"]  = lats
     num_communities = survived_df["community_id"].nunique()
 
     if num_communities <= 20:
