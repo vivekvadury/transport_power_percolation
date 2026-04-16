@@ -1,16 +1,19 @@
 """
 script_01_build_graph.py
 ========================
-Build the LCC NetworkX graph from raw CSVs and persist it as a pickle.
-Also saves the authoritative top-10 removal order for BC and DC strategies.
+Build LCC NetworkX graphs for BOTH networks (transportation and power)
+from raw CSVs and persist each as a pickle.
+Also saves the authoritative top-10 removal order for BC and DC strategies,
+and computes articulation points (cut vertices) for each network.
 
 Run from the Seattle-extension/ directory:
     python scripts/script_01_build_graph.py
 
-Outputs (written to output/):
+Outputs (written to output/transport/ and output/power/):
     lcc_graph.pkl               - pickled nx.Graph, integer node IDs, all attrs
     removal_order_bc.csv        - rank, node_id, betweenness_centrality, longitude, latitude
     removal_order_dc.csv        - rank, node_id, degree_centrality, longitude, latitude
+    articulation_points.csv     - node_id, longitude, latitude for all cut vertices
 """
 
 import pickle
@@ -18,35 +21,41 @@ import pathlib
 import pandas as pd
 import networkx as nx
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
-ROOT = pathlib.Path(__file__).parent.parent   # Seattle-extension/
-DATA = ROOT / "data"
+ROOT = pathlib.Path(__file__).parent.parent
 OUT  = ROOT / "output"
 OUT.mkdir(parents=True, exist_ok=True)
 
+# ── Network configuration ──────────────────────────────────────────────────────
+NETWORKS = [
+    {
+        "name":        "transport",
+        "data_dir":    ROOT / "data" / "transportion",
+        "out_dir":     OUT / "transport",
+        "coord_label": "EPSG:2926 — WA State Plane North (ft)",
+    },
+    {
+        "name":        "power",
+        "data_dir":    ROOT / "data" / "power",
+        "out_dir":     OUT / "power",
+        "coord_label": "WGS84 Longitude / Latitude (decimal degrees)",
+    },
+]
+
+
+# ── Reusable functions (network-agnostic) ──────────────────────────────────────
 
 def build_graph_from_csvs(node_csv_path: pathlib.Path,
                           edge_csv_path: pathlib.Path) -> nx.Graph:
     """
     Build a nx.Graph from pre-computed node and edge CSVs.
 
-    Node attributes attached: Longitude, Latitude, Degree Centrality,
-    Betweenness Centrality.  Node IDs are kept as Python int.
-
-    Parameters
-    ----------
-    node_csv_path : path to node_list_dc_btwn.csv
-    edge_csv_path : path to edge_list.csv
-
-    Returns
-    -------
-    nx.Graph with integer node IDs and full attributes
+    Node attributes attached: longitude, latitude, degree_centrality,
+    betweenness_centrality.  Node IDs are kept as Python int.
     """
     nodes_df = pd.read_csv(node_csv_path)
     edges_df = pd.read_csv(edge_csv_path)
 
     G = nx.Graph()
-
     for _, row in nodes_df.iterrows():
         node_id = int(row["Node ID"])
         G.add_node(node_id,
@@ -58,22 +67,11 @@ def build_graph_from_csvs(node_csv_path: pathlib.Path,
     for _, row in edges_df.iterrows():
         G.add_edge(int(row["Source"]), int(row["Target"]),
                    weight=float(row["Weight"]))
-
     return G
 
 
 def extract_lcc(G: nx.Graph) -> nx.Graph:
-    """
-    Extract the Largest Connected Component as a standalone mutable graph.
-
-    Parameters
-    ----------
-    G : full nx.Graph
-
-    Returns
-    -------
-    G_lcc : nx.Graph (copy of the LCC subgraph)
-    """
+    """Extract the Largest Connected Component as a standalone mutable graph."""
     largest_cc = max(nx.connected_components(G), key=len)
     return G.subgraph(largest_cc).copy()
 
@@ -83,138 +81,115 @@ def load_removal_order(central_csv_path: pathlib.Path,
                        rank_col: str) -> pd.DataFrame:
     """
     Load the authoritative top-10 removal order from a central_nodes_*.csv.
-
     The CSV is already sorted descending by the centrality metric.
-    Node IDs are cast to int for consistency with the graph.
-
-    Parameters
-    ----------
-    central_csv_path : path to central_nodes_btwn.csv or central_nodes_dc.csv
-    metric_col       : name of the centrality column in that CSV
-    rank_col         : name for the metric column in the output DataFrame
-
-    Returns
-    -------
-    pd.DataFrame with columns: rank, node_id, <rank_col>, longitude, latitude
     """
     df = pd.read_csv(central_csv_path)
     df["Node ID"] = df["Node ID"].astype(int)
-    result = pd.DataFrame({
+    return pd.DataFrame({
         "rank":      range(1, len(df) + 1),
         "node_id":   df["Node ID"].values,
         rank_col:    df[metric_col].values,
         "longitude": df["Longitude"].values,
         "latitude":  df["Latitude"].values,
     })
-    return result
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print("=" * 60)
-    print("Script 01 — Build Graph")
-    print("=" * 60)
+# ── Per-network processing ─────────────────────────────────────────────────────
 
-    # Build full graph
+def process_network(cfg: dict):
+    name     = cfg["name"]
+    data_dir = cfg["data_dir"]
+    out_dir  = cfg["out_dir"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'=' * 60}")
+    print(f"  Network: {name.upper()}")
+    print(f"{'=' * 60}")
+
+    # [1/5] Build graph
     print("\n[1/5] Reading node and edge CSVs...")
-    G = build_graph_from_csvs(DATA / "node_list_dc_btwn.csv",
-                               DATA / "edge_list.csv")
-    print(f"      Full graph: {G.number_of_nodes()} nodes, "
-          f"{G.number_of_edges()} edges, "
+    G = build_graph_from_csvs(data_dir / "node_list_dc_btwn.csv",
+                              data_dir / "edge_list.csv")
+    print(f"      Full graph: {G.number_of_nodes():,} nodes, "
+          f"{G.number_of_edges():,} edges, "
           f"{nx.number_connected_components(G)} component(s)")
 
-    # Extract LCC
+    # [2/5] Extract LCC
     print("\n[2/5] Extracting Largest Connected Component...")
-    G_lcc = extract_lcc(G)
-    print(f"      LCC: {G_lcc.number_of_nodes()} nodes, "
-          f"{G_lcc.number_of_edges()} edges, "
-          f"{nx.number_connected_components(G_lcc)} component(s)")
-
+    G_lcc    = extract_lcc(G)
     isolated = G.number_of_nodes() - G_lcc.number_of_nodes()
+    print(f"      LCC: {G_lcc.number_of_nodes():,} nodes, "
+          f"{G_lcc.number_of_edges():,} edges, "
+          f"{nx.number_connected_components(G_lcc)} component(s)")
     print(f"      Nodes outside LCC (dropped): {isolated}")
 
-    # Save LCC pickle
-    print("\n[3/5] Saving LCC graph to output/lcc_graph.pkl...")
-    with open(OUT / "lcc_graph.pkl", "wb") as f:
+    # [3/5] Save LCC pickle
+    print("\n[3/5] Saving LCC graph...")
+    with open(out_dir / "lcc_graph.pkl", "wb") as f:
         pickle.dump(G_lcc, f, protocol=4)
     print("      Saved.")
 
-    # Load and save removal orders
+    # [4/5] Removal orders
     print("\n[4/5] Saving removal order CSVs...")
-
     bc_order = load_removal_order(
-        DATA / "central_nodes_btwn.csv",
+        data_dir / "central_nodes_btwn.csv",
         metric_col="Betweenness Centrality",
         rank_col="betweenness_centrality"
     )
-    bc_order.to_csv(OUT / "removal_order_bc.csv", index=False)
+    bc_order.to_csv(out_dir / "removal_order_bc.csv", index=False)
     print(f"      BC removal order (top {len(bc_order)}):")
     for _, r in bc_order.iterrows():
-        print(f"        rank {int(r['rank'])}: node {int(r['node_id'])}  "
+        print(f"        rank {int(r['rank']):2d}: node {int(r['node_id']):6d}  "
               f"BC={r['betweenness_centrality']:.0f}")
 
     dc_order = load_removal_order(
-        DATA / "central_nodes_dc.csv",
+        data_dir / "central_nodes_dc.csv",
         metric_col="Degree Centrality",
         rank_col="degree_centrality"
     )
-    dc_order.to_csv(OUT / "removal_order_dc.csv", index=False)
+    dc_order.to_csv(out_dir / "removal_order_dc.csv", index=False)
     print(f"\n      DC removal order (top {len(dc_order)}):")
     for _, r in dc_order.iterrows():
-        print(f"        rank {int(r['rank'])}: node {int(r['node_id'])}  "
+        print(f"        rank {int(r['rank']):2d}: node {int(r['node_id']):6d}  "
               f"DC={r['degree_centrality']:.1f}")
 
-    # Articulation point analysis
+    # [5/5] Articulation points
     print("\n[5/5] Computing articulation points (cut vertices)...")
     ap_set = set(nx.articulation_points(G_lcc))
-    print(f"      {len(ap_set):,} articulation points in LCC "
-          f"({len(ap_set) / G_lcc.number_of_nodes():.2%} of nodes)")
+    print(f"      {len(ap_set):,} articulation points "
+          f"({len(ap_set) / G_lcc.number_of_nodes():.2%} of LCC nodes)")
 
-    # Save articulation points CSV
-    ap_rows = []
-    for node_id in ap_set:
-        attr = G_lcc.nodes[node_id]
-        ap_rows.append({
-            "node_id":   node_id,
-            "longitude": attr["longitude"],
-            "latitude":  attr["latitude"],
-        })
+    ap_rows = [{"node_id":   nid,
+                "longitude": G_lcc.nodes[nid]["longitude"],
+                "latitude":  G_lcc.nodes[nid]["latitude"]}
+               for nid in ap_set]
     ap_df = pd.DataFrame(ap_rows).sort_values("node_id").reset_index(drop=True)
-    ap_df.to_csv(OUT / "articulation_points.csv", index=False)
+    ap_df.to_csv(out_dir / "articulation_points.csv", index=False)
     print(f"      Saved articulation_points.csv ({len(ap_df):,} rows)")
 
-    # Cross-reference removal orders with articulation points
-    def ap_check(order_df: pd.DataFrame, ap_set: set, strategy: str):
-        print(f"\n      {strategy} removal order — cut vertex check:")
-        any_ap = False
+    def ap_check(order_df: pd.DataFrame, label: str):
+        print(f"\n      {label} removal order — cut vertex check:")
         for _, r in order_df.iterrows():
             nid = int(r["node_id"])
             tag = "[CUT VERTEX]" if nid in ap_set else "[not AP]    "
             print(f"        rank {int(r['rank']):2d}: node {nid:6d}  {tag}")
-            if nid in ap_set:
-                any_ap = True
-        if not any_ap:
-            print(f"        --> None of the top-{len(order_df)} {strategy} nodes are cut vertices.")
-        return any_ap
 
-    bc_has_ap = ap_check(bc_order, ap_set, "BC")
-    dc_has_ap = ap_check(dc_order, ap_set, "DC")
+    ap_check(bc_order, "BC")
+    ap_check(dc_order, "DC")
 
-    print()
-    if dc_has_ap and not bc_has_ap:
-        print("      FINDING: DC nodes include cut vertices; BC nodes do not.")
-        print("      This explains why DC attack fractures the network faster.")
-    elif bc_has_ap and not dc_has_ap:
-        print("      FINDING: BC nodes include cut vertices; DC nodes do not.")
-    elif bc_has_ap and dc_has_ap:
-        print("      FINDING: Both BC and DC removal orders include cut vertices.")
-    else:
-        print("      FINDING: Neither BC nor DC top nodes are cut vertices.")
 
-    print("\n" + "=" * 60)
-    print("Done. Outputs written to output/")
-    print("  output/lcc_graph.pkl")
-    print("  output/removal_order_bc.csv")
-    print("  output/removal_order_dc.csv")
-    print("  output/articulation_points.csv")
+# ── Main ───────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("Script 01 — Build Graph (Transport + Power)")
+    print("=" * 60)
+
+    for cfg in NETWORKS:
+        process_network(cfg)
+
+    print(f"\n{'=' * 60}")
+    print("Done. Outputs written to:")
+    for cfg in NETWORKS:
+        print(f"  output/{cfg['name']}/")
     print("=" * 60)

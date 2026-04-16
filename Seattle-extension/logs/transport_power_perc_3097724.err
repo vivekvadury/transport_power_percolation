@@ -1,0 +1,15 @@
+/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_04_geodviz.py:108: MatplotlibDeprecationWarning: The get_cmap function was deprecated in Matplotlib 3.7 and will be removed in 3.11. Use ``matplotlib.colormaps[name]`` or ``matplotlib.colormaps.get_cmap()`` or ``pyplot.get_cmap()`` instead.
+  cmap = plt.cm.get_cmap("hsv", num_communities)
+Traceback (most recent call last):
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_04_geodviz.py", line 289, in <module>
+    plot_combined_map(
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_04_geodviz.py", line 176, in plot_combined_map
+    nc_t = plot_community_map(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_04_geodviz.py", line 101, in plot_community_map
+    survived_df = build_node_df(G_lcc, assignment)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_04_geodviz.py", line 70, in build_node_df
+    for node_id, comm_idx in assignment.items():
+                             ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'items'

@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "/home/va0735/.conda/envs/transport_power_perc/lib/python3.11/site-packages/networkx/classes/graph.py", line 694, in remove_node
+    nbrs = list(adj[n])  # list handles self-loops (allows mutation)
+                ~~~^^^
+KeyError: 17696
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_02_percolation.py", line 348, in <module>
+    process_network(cfg)
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_02_percolation.py", line 250, in process_network
+    dc_tip = find_tipping_point(G_lcc, dc_order, strategy="DC", seed=42)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/network/va0735/transport_power_percolation/Seattle-extension/scripts/script_02_percolation.py", line 75, in find_tipping_point
+    G.remove_node(node)
+  File "/home/va0735/.conda/envs/transport_power_perc/lib/python3.11/site-packages/networkx/classes/graph.py", line 697, in remove_node
+    raise NetworkXError(f"The node {n} is not in the graph.") from err
+networkx.exception.NetworkXError: The node 17696 is not in the graph.

@@ -56,6 +56,8 @@ if __name__ == "__main__":
     total = time.time() - overall_start
     print(f"\n{'=' * 65}")
     print(f"  All scripts completed in {total:.1f}s")
-    print(f"  Results are in: output/")
-    print(f"  Figures are in: output/figures/")
+    print(f"  Results are in:  output/transport/  and  output/power/")
+    print(f"  Figures are in:  output/figures/transport/")
+    print(f"                   output/figures/power/")
+    print(f"                   output/figures/combined/")
     print(f"{'=' * 65}")

@@ -1,0 +1,304 @@
+============================================================
+Script 01 — Build Graph (Transport + Power)
+============================================================
+
+============================================================
+  Network: TRANSPORT
+============================================================
+
+[1/5] Reading node and edge CSVs...
+      Full graph: 21,202 nodes, 32,061 edges, 2 component(s)
+
+[2/5] Extracting Largest Connected Component...
+      LCC: 21,197 nodes, 32,057 edges, 1 component(s)
+      Nodes outside LCC (dropped): 5
+
+[3/5] Saving LCC graph...
+      Saved.
+
+[4/5] Saving removal order CSVs...
+      BC removal order (top 10):
+        rank  1: node  15619  BC=180918376
+        rank  2: node  15886  BC=170441767
+        rank  3: node  15634  BC=154149649
+        rank  4: node  17297  BC=153005572
+        rank  5: node  15673  BC=150812349
+        rank  6: node  15672  BC=147323588
+        rank  7: node  15861  BC=142862215
+        rank  8: node  15618  BC=134859069
+        rank  9: node  19574  BC=124321685
+        rank 10: node  15853  BC=107960454
+
+      DC removal order (top 10):
+        rank  1: node   6149  DC=8.0
+        rank  2: node   1942  DC=7.0
+        rank  3: node   2373  DC=7.0
+        rank  4: node   3588  DC=7.0
+        rank  5: node   8801  DC=7.0
+        rank  6: node  12899  DC=7.0
+        rank  7: node  16606  DC=7.0
+        rank  8: node  18063  DC=7.0
+        rank  9: node  19080  DC=7.0
+        rank 10: node    296  DC=6.0
+
+[5/5] Computing articulation points (cut vertices)...
+      3,725 articulation points (17.57% of LCC nodes)
+      Saved articulation_points.csv (3,725 rows)
+
+      BC removal order — cut vertex check:
+        rank  1: node  15619  [not AP]    
+        rank  2: node  15886  [not AP]    
+        rank  3: node  15634  [not AP]    
+        rank  4: node  17297  [not AP]    
+        rank  5: node  15673  [not AP]    
+        rank  6: node  15672  [not AP]    
+        rank  7: node  15861  [not AP]    
+        rank  8: node  15618  [not AP]    
+        rank  9: node  19574  [not AP]    
+        rank 10: node  15853  [not AP]    
+
+      DC removal order — cut vertex check:
+        rank  1: node   6149  [not AP]    
+        rank  2: node   1942  [not AP]    
+        rank  3: node   2373  [CUT VERTEX]
+        rank  4: node   3588  [not AP]    
+        rank  5: node   8801  [not AP]    
+        rank  6: node  12899  [not AP]    
+        rank  7: node  16606  [CUT VERTEX]
+        rank  8: node  18063  [not AP]    
+        rank  9: node  19080  [not AP]    
+        rank 10: node    296  [not AP]    
+
+============================================================
+  Network: POWER
+============================================================
+
+[1/5] Reading node and edge CSVs...
+      Full graph: 37,666 nodes, 34,804 edges, 3698 component(s)
+
+[2/5] Extracting Largest Connected Component...
+      LCC: 16,091 nodes, 16,304 edges, 1 component(s)
+      Nodes outside LCC (dropped): 21575
+
+[3/5] Saving LCC graph...
+      Saved.
+
+[4/5] Saving removal order CSVs...
+      BC removal order (top 10):
+        rank  1: node    398  BC=130030978
+        rank  2: node   6083  BC=125432464
+        rank  3: node  12899  BC=125167566
+        rank  4: node   9606  BC=125164758
+        rank  5: node   9607  BC=125153026
+        rank  6: node   5642  BC=125144006
+        rank  7: node  10622  BC=125094126
+        rank  8: node   8046  BC=121824498
+        rank  9: node  19830  BC=121760159
+        rank 10: node  13305  BC=121489818
+
+      DC removal order (top 10):
+        rank  1: node  17696  DC=14.0
+        rank  2: node  29585  DC=14.0
+        rank  3: node   8731  DC=13.0
+        rank  4: node  13599  DC=13.0
+        rank  5: node  20282  DC=13.0
+        rank  6: node  21080  DC=13.0
+        rank  7: node   9947  DC=12.0
+        rank  8: node  12422  DC=12.0
+        rank  9: node  13793  DC=12.0
+        rank 10: node  15493  DC=12.0
+
+[5/5] Computing articulation points (cut vertices)...
+      7,317 articulation points (45.47% of LCC nodes)
+      Saved articulation_points.csv (7,317 rows)
+
+      BC removal order — cut vertex check:
+        rank  1: node    398  [CUT VERTEX]
+        rank  2: node   6083  [CUT VERTEX]
+        rank  3: node  12899  [CUT VERTEX]
+        rank  4: node   9606  [CUT VERTEX]
+        rank  5: node   9607  [CUT VERTEX]
+        rank  6: node   5642  [CUT VERTEX]
+        rank  7: node  10622  [CUT VERTEX]
+        rank  8: node   8046  [CUT VERTEX]
+        rank  9: node  19830  [CUT VERTEX]
+        rank 10: node  13305  [CUT VERTEX]
+
+      DC removal order — cut vertex check:
+        rank  1: node  17696  [not AP]    
+        rank  2: node  29585  [not AP]    
+        rank  3: node   8731  [not AP]    
+        rank  4: node  13599  [not AP]    
+        rank  5: node  20282  [not AP]    
+        rank  6: node  21080  [not AP]    
+        rank  7: node   9947  [not AP]    
+        rank  8: node  12422  [not AP]    
+        rank  9: node  13793  [not AP]    
+        rank 10: node  15493  [not AP]    
+
+============================================================
+Done. Outputs written to:
+  output/transport/
+  output/power/
+============================================================
+=================================================================
+Script 02 — Tipping Point + Full-Attack Analysis (Transport + Power)
+=================================================================
+
+=================================================================
+  Network: TRANSPORT
+=================================================================
+
+[1/6] Loading LCC graph and removal orders...
+      LCC: 21,197 nodes, 32,057 edges
+      BC removal order: [15619, 15886, 15634, 17297, 15673, 15672, 15861, 15618, 19574, 15853]
+      DC removal order: [6149, 1942, 2373, 3588, 8801, 12899, 16606, 18063, 19080, 296]
+
+─────────────────────────────────────────────────────────────────
+[2/6] PART A — Tipping Point Scan
+─────────────────────────────────────────────────────────────────
+
+  [BC] Scanning for tipping point...
+    k= 1  removed node  15619  →  1 component(s)
+    k= 2  removed node  15886  →  1 component(s)
+    k= 3  removed node  15634  →  1 component(s)
+    k= 4  removed node  17297  →  1 component(s)
+    k= 5  removed node  15673  →  1 component(s)
+    k= 6  removed node  15672  →  1 component(s)
+    k= 7  removed node  15861  →  1 component(s)
+    k= 8  removed node  15618  →  1 component(s)
+    k= 9  removed node  19574  →  1 component(s)
+    k=10  removed node  15853  →  1 component(s)
+  [BC] No fracture in k=1..10 — network stayed connected.
+
+  [DC] Scanning for tipping point...
+    k= 1  removed node   6149  →  1 component(s)
+    k= 2  removed node   1942  →  1 component(s)
+    k= 3  removed node   2373  →  3 component(s)
+
+  *** [DC] TIPPING POINT at k=3 ***
+      Node 2373 caused the first fracture.
+      Component sizes: [21192, 1, 1]
+      Louvain communities at tipping: 68, Q=0.9542
+
+    k= 4  removed node   3588  →  3 component(s)
+    k= 5  removed node   8801  →  3 component(s)
+    k= 6  removed node  12899  →  3 component(s)
+    k= 7  removed node  16606  →  4 component(s)
+    k= 8  removed node  18063  →  4 component(s)
+    k= 9  removed node  19080  →  4 component(s)
+    k=10  removed node    296  →  4 component(s)
+
+─────────────────────────────────────────────────────────────────
+[3/6] PART B — Full-Attack Snapshot (remove all 10 nodes)
+─────────────────────────────────────────────────────────────────
+
+  [BC] Full-attack snapshot (k=10):
+    Removed:              [15619, 15886, 15634, 17297, 15673, 15672, 15861, 15618, 19574, 15853]
+    Connected components: 1
+    Largest component:    21,187 nodes (99.95% of LCC)
+    Louvain communities:  61 total, 61 non-trivial
+    Modularity (Q):       0.9547
+
+  [DC] Full-attack snapshot (k=10):
+    Removed:              [6149, 1942, 2373, 3588, 8801, 12899, 16606, 18063, 19080, 296]
+    Connected components: 4
+    Largest component:    21,184 nodes (99.94% of LCC)
+    Severed components:   [1, 1, 1] nodes
+    Louvain communities:  68 total, 65 non-trivial
+    Modularity (Q):       0.9546
+
+─────────────────────────────────────────────────────────────────
+[4/6] PART C — Louvain Stability Check
+─────────────────────────────────────────────────────────────────
+
+  [BC] Louvain stability check (seeds 0–9)...
+    Communities: 62.8 +/- 1.99  (range 59–66)
+    Modularity:  0.9545 +/- 0.0003
+
+  [DC] Louvain stability check (seeds 0–9)...
+    Communities: 66.0 +/- 1.95  (range 63–70)
+    Modularity:  0.9545 +/- 0.0004
+  Saved: louvain_stability.csv
+
+─────────────────────────────────────────────────────────────────
+[5/6] PART D — Average Path Length  (BC attack; 500-node sample)
+─────────────────────────────────────────────────────────────────
+  Note: may take 2–4 minutes.
+
+  Computing baseline APL (G_lcc)...
+    Baseline APL:  44.3286
+  Computing post-BC APL...
+    Post-BC APL:   47.7487  (+7.72%)
+
+  FINDING: BC attack increased average travel distance by 7.7% without severing the network.
+
+  [DC skipped — graph disconnected at k=10; APL undefined]
+  Saved: path_length_analysis.csv
+
+─────────────────────────────────────────────────────────────────
+[6/6] Outputs saved to output/{name}/:
+      articulation_points.csv
+      louvain_stability.csv
+      path_length_analysis.csv
+      post_attack_bc.csv
+      post_attack_dc.csv
+      removal_order_bc.csv
+      removal_order_dc.csv
+      tipping_points.csv
+      community_assignments_bc_full.pkl
+      community_assignments_bc_tipping.pkl
+      community_assignments_dc_full.pkl
+      community_assignments_dc_tipping.pkl
+      lcc_graph.pkl
+
+=================================================================
+  Network: POWER
+=================================================================
+
+[1/6] Loading LCC graph and removal orders...
+      LCC: 16,091 nodes, 16,304 edges
+      BC removal order: [398, 6083, 12899, 9606, 9607, 5642, 10622, 8046, 19830, 13305]
+      DC removal order: [17696, 29585, 8731, 13599, 20282, 21080, 9947, 12422, 13793, 15493]
+
+─────────────────────────────────────────────────────────────────
+[2/6] PART A — Tipping Point Scan
+─────────────────────────────────────────────────────────────────
+
+  [BC] Scanning for tipping point...
+    k= 1  removed node    398  →  3 component(s)
+
+  *** [BC] TIPPING POINT at k=1 ***
+      Node 398 caused the first fracture.
+      Component sizes: [9508, 6581, 1]
+      Louvain communities at tipping: 123, Q=0.9780
+
+    k= 2  removed node   6083  →  5 component(s)
+    k= 3  removed node  12899  →  7 component(s)
+    k= 4  removed node   9606  →  8 component(s)
+    k= 5  removed node   9607  →  8 component(s)
+    k= 6  removed node   5642  →  9 component(s)
+    k= 7  removed node  10622  →  9 component(s)
+    k= 8  removed node   8046  →  10 component(s)
+    k= 9  removed node  19830  →  11 component(s)
+    k=10  removed node  13305  →  13 component(s)
+
+  [DC] Scanning for tipping point...
+=================================================================
+  Seattle Extension — Full Analysis Pipeline
+=================================================================
+
+#################################################################
+# Running: script_01_build_graph.py
+#################################################################
+
+
+[OK] script_01_build_graph.py finished in 7.7s
+
+#################################################################
+# Running: script_02_percolation.py
+#################################################################
+
+
+[ERROR] script_02_percolation.py failed (exit code 1).
+Stopping — fix the error above before re-running.
