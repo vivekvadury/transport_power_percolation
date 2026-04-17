@@ -245,6 +245,16 @@ def process_network(cfg: dict):
     print(f"      BC removal order: {bc_order}")
     print(f"      DC removal order: {dc_order}")
 
+    # Baseline modularity (pre-attack)
+    print("\n[1b/6] Computing baseline modularity (pre-attack G_lcc)...")
+    baseline_communities = nx_comm.louvain_communities(G_lcc, seed=42)
+    baseline_q = nx_comm.modularity(G_lcc, baseline_communities)
+    print(f"      Baseline Q = {baseline_q:.4f}  "
+          f"({len(baseline_communities)} communities on unattacked network)")
+    pd.DataFrame([{"network": name, "baseline_modularity": baseline_q,
+                   "baseline_num_communities": len(baseline_communities)}]
+                 ).to_csv(out_dir / "baseline_modularity.csv", index=False)
+
     # Part A
     print("\n" + "─" * 65)
     print("[2/6] PART A — Tipping Point Scan")
@@ -285,6 +295,14 @@ def process_network(cfg: dict):
         fname = out_dir / f"community_assignments_{strat}_full.pkl"
         with open(fname, "wb") as f:
             pickle.dump(result["community_assignment"], f, protocol=4)
+
+    # Modularity comparison: baseline vs post-attack
+    print("\n  Modularity comparison (baseline vs post-attack):")
+    print(f"    {'':30s}  {'Q':>8}  {'delta Q':>9}")
+    print(f"    {'Baseline (no attack)':30s}  {baseline_q:8.4f}")
+    for label, result in [("BC attack (k=10)", bc_full), ("DC attack (k=10)", dc_full)]:
+        delta = result["modularity"] - baseline_q
+        print(f"    {label:30s}  {result['modularity']:8.4f}  {delta:+9.4f}")
 
     # Part C — Stability
     print("\n" + "─" * 65)
@@ -337,6 +355,11 @@ def process_network(cfg: dict):
     for f in sorted(out_dir.glob("*.csv")) + sorted(out_dir.glob("*.pkl")):
         print(f"      {f.name}")
 
+    return {
+        "baseline_q":            baseline_q,
+        "baseline_communities":  len(baseline_communities),
+    }
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Main
@@ -347,8 +370,32 @@ if __name__ == "__main__":
     print("Script 02 — Tipping Point + Full-Attack Analysis (Transport + Power)")
     print("=" * 65)
 
+    per_network_results = {}
     for cfg in NETWORKS:
-        process_network(cfg)
+        per_network_results[cfg["name"]] = process_network(cfg)
+
+    # Combined modularity comparison across both networks
+    print("\n" + "─" * 65)
+    print("Building modularity_comparison.csv (all networks)...")
+    rows = []
+    for name, res in per_network_results.items():
+        bc_q = float(pd.read_csv(OUT / name / "post_attack_bc.csv").iloc[0]["modularity"])
+        dc_q = float(pd.read_csv(OUT / name / "post_attack_dc.csv").iloc[0]["modularity"])
+        bq   = res["baseline_q"]
+        rows.append({
+            "network":              name,
+            "baseline_q":           round(bq, 4),
+            "baseline_communities": res["baseline_communities"],
+            "bc_post_attack_q":     round(bc_q, 4),
+            "dc_post_attack_q":     round(dc_q, 4),
+            "bc_delta_q":           round(bc_q - bq, 4),
+            "dc_delta_q":           round(dc_q - bq, 4),
+        })
+    comparison_df = pd.DataFrame(rows)
+    comparison_df.to_csv(OUT / "modularity_comparison.csv", index=False)
+    print("  Saved: output/modularity_comparison.csv")
+    print()
+    print(comparison_df.to_string(index=False))
 
     print("\n" + "=" * 65)
     print("Done.")
