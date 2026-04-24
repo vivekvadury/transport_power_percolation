@@ -29,24 +29,92 @@ Outputs (written to output/transport/ and output/power/):
     community_assignments_{bc/dc}_full.pkl
     louvain_stability.csv
     path_length_analysis.csv
+    baseline_community_summary.csv
+    community_assignments_baseline.csv/.pkl
+    post_attack_linked_bc.csv
+    community_assignments_linked_bc.csv/.pkl
+    output/multilayer/linked_bc_community_comparison.csv
 """
 
 import json
 import pickle
 import random
 import pathlib
+import sys
 import numpy as np
 import pandas as pd
 import networkx as nx
 import networkx.algorithms.community as nx_comm
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 ROOT = pathlib.Path(__file__).parent.parent
+DATA = ROOT / "data"
 OUT  = ROOT / "output"
+OUT_MULTILAYER = OUT / "multilayer"
 
 NETWORKS = [
     {"name": "transport", "out_dir": OUT / "transport"},
     {"name": "power",     "out_dir": OUT / "power"},
 ]
+
+
+def assignment_from_communities(communities: list[set[int]]) -> dict:
+    """Convert Louvain community sets to a node_id -> community_id mapping."""
+    return {nid: idx for idx, comm in enumerate(communities) for nid in comm}
+
+
+def community_assignment_df(G: nx.Graph, assignment: dict) -> pd.DataFrame:
+    """Build a tabular community assignment export with node coordinates."""
+    rows = []
+    for node_id, community_id in assignment.items():
+        attr = G.nodes[node_id]
+        rows.append({
+            "node_id": node_id,
+            "community_id": community_id,
+            "longitude": attr.get("longitude"),
+            "latitude": attr.get("latitude"),
+        })
+    return pd.DataFrame(rows).sort_values(["community_id", "node_id"]).reset_index(drop=True)
+
+
+def save_community_assignment(G: nx.Graph,
+                              assignment: dict,
+                              out_dir: pathlib.Path,
+                              stem: str):
+    """Save community assignments in both pickle and CSV formats."""
+    with open(out_dir / f"{stem}.pkl", "wb") as f:
+        pickle.dump(assignment, f, protocol=4)
+    community_assignment_df(G, assignment).to_csv(out_dir / f"{stem}.csv", index=False)
+
+
+def community_summary_row(network: str,
+                          scenario: str,
+                          G: nx.Graph,
+                          communities: list[set[int]],
+                          modularity: float,
+                          removed_nodes=None) -> dict:
+    """Create one summary row for baseline or post-removal Louvain results."""
+    component_sizes = sorted([len(c) for c in nx.connected_components(G)], reverse=True)
+    community_sizes = sorted([len(c) for c in communities], reverse=True)
+    removed_nodes = removed_nodes or []
+    return {
+        "network": network,
+        "scenario": scenario,
+        "num_nodes": G.number_of_nodes(),
+        "num_edges": G.number_of_edges(),
+        "num_nodes_removed": len(removed_nodes),
+        "removed_node_ids_json": json.dumps(removed_nodes),
+        "num_components": nx.number_connected_components(G),
+        "component_sizes_json": json.dumps(component_sizes),
+        "num_communities": len(communities),
+        "num_nontrivial_communities": sum(1 for c in communities if len(c) >= 2),
+        "community_sizes_json": json.dumps(community_sizes),
+        "modularity": modularity,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -87,9 +155,7 @@ def find_tipping_point(G_lcc: nx.Graph,
                 [len(c) for c in nx.connected_components(G)], reverse=True
             )
             communities = nx_comm.louvain_communities(G, seed=seed)
-            tipping_assignment = {nid: idx
-                                  for idx, comm in enumerate(communities)
-                                  for nid in comm}
+            tipping_assignment = assignment_from_communities(communities)
             print(f"\n  *** [{strategy}] TIPPING POINT at k={k} ***")
             print(f"      Node {causal_node} caused the first fracture.")
             print(f"      Component sizes: {tipping_sizes}")
@@ -118,7 +184,7 @@ def full_attack_snapshot(G_lcc: nx.Graph,
                          strategy: str,
                          seed: int = 42) -> dict:
     """
-    Remove all 10 top-centrality nodes at once and analyse the result.
+    Remove the requested centrality nodes at once and analyse the result.
     """
     G                = G_lcc.copy()
     actually_removed = [n for n in removal_order if n in G]
@@ -132,11 +198,9 @@ def full_attack_snapshot(G_lcc: nx.Graph,
     num_nontrivial  = sum(1 for c in communities if len(c) >= 2)
     modularity      = nx_comm.modularity(G, communities)
 
-    assignment = {nid: idx
-                  for idx, comm in enumerate(communities)
-                  for nid in comm}
+    assignment = assignment_from_communities(communities)
 
-    print(f"\n  [{strategy}] Full-attack snapshot (k=10):")
+    print(f"\n  [{strategy}] Full-attack snapshot (k={len(removal_order)}):")
     print(f"    Removed:              {actually_removed}")
     print(f"    Connected components: {len(components)}")
     print(f"    Largest component:    {component_sizes[0]:,} nodes "
@@ -249,11 +313,24 @@ def process_network(cfg: dict):
     print("\n[1b/6] Computing baseline modularity (pre-attack G_lcc)...")
     baseline_communities = nx_comm.louvain_communities(G_lcc, seed=42)
     baseline_q = nx_comm.modularity(G_lcc, baseline_communities)
+    baseline_assignment = assignment_from_communities(baseline_communities)
+    baseline_summary = community_summary_row(
+        name, "baseline", G_lcc, baseline_communities, baseline_q
+    )
     print(f"      Baseline Q = {baseline_q:.4f}  "
           f"({len(baseline_communities)} communities on unattacked network)")
-    pd.DataFrame([{"network": name, "baseline_modularity": baseline_q,
-                   "baseline_num_communities": len(baseline_communities)}]
-                 ).to_csv(out_dir / "baseline_modularity.csv", index=False)
+    pd.DataFrame([{
+        "network": name,
+        "baseline_modularity": baseline_q,
+        "baseline_num_communities": len(baseline_communities),
+        "baseline_num_nontrivial_communities": baseline_summary["num_nontrivial_communities"],
+        "baseline_community_sizes_json": baseline_summary["community_sizes_json"],
+    }]).to_csv(out_dir / "baseline_modularity.csv", index=False)
+    pd.DataFrame([baseline_summary]).to_csv(out_dir / "baseline_community_summary.csv", index=False)
+    save_community_assignment(
+        G_lcc, baseline_assignment, out_dir, "community_assignments_baseline"
+    )
+    print("      Saved baseline community assignments (.csv and .pkl).")
 
     # Part A
     print("\n" + "─" * 65)
@@ -296,11 +373,40 @@ def process_network(cfg: dict):
         with open(fname, "wb") as f:
             pickle.dump(result["community_assignment"], f, protocol=4)
 
+    # Linked BC attack: nodes that are high centrality in both systems
+    print("\n" + "-" * 65)
+    print("[3b/6] PART B2 - Linked BC Node Attack")
+    print("-" * 65)
+    linked_order_path = DATA / "multilayer" / f"removal_order_linked_bc_{name}.csv"
+    linked_order_df = pd.read_csv(linked_order_path)
+    linked_order_df["node_id"] = linked_order_df["node_id"].astype(int)
+    linked_order = linked_order_df["node_id"].tolist()
+    linked_order_df.to_csv(out_dir / "removal_order_linked_bc.csv", index=False)
+    print(f"  Linked BC removal order from {linked_order_path.relative_to(ROOT)}: {linked_order}")
+
+    linked_full = full_attack_snapshot(
+        G_lcc, linked_order, strategy="LINKED_BC", seed=42
+    )
+    linked_row = {k: v for k, v in linked_full.items() if k != "community_assignment"}
+    linked_row["component_sizes_json"] = json.dumps(linked_row.pop("component_sizes"))
+    linked_row["community_sizes_json"] = json.dumps(linked_row.pop("community_sizes"))
+    linked_row["actually_removed"] = json.dumps(linked_row["actually_removed"])
+    pd.DataFrame([linked_row]).to_csv(out_dir / "post_attack_linked_bc.csv", index=False)
+    save_community_assignment(
+        G_lcc, linked_full["community_assignment"], out_dir,
+        "community_assignments_linked_bc"
+    )
+    print("  Saved linked BC post-attack results and community assignments.")
+
     # Modularity comparison: baseline vs post-attack
     print("\n  Modularity comparison (baseline vs post-attack):")
     print(f"    {'':30s}  {'Q':>8}  {'delta Q':>9}")
     print(f"    {'Baseline (no attack)':30s}  {baseline_q:8.4f}")
-    for label, result in [("BC attack (k=10)", bc_full), ("DC attack (k=10)", dc_full)]:
+    for label, result in [
+        ("BC attack (k=10)", bc_full),
+        ("DC attack (k=10)", dc_full),
+        (f"Linked BC attack (k={len(linked_order)})", linked_full),
+    ]:
         delta = result["modularity"] - baseline_q
         print(f"    {label:30s}  {result['modularity']:8.4f}  {delta:+9.4f}")
 
@@ -351,13 +457,16 @@ def process_network(cfg: dict):
 
     # Summary
     print("\n" + "─" * 65)
-    print("[6/6] Outputs saved to output/{name}/:")
+    print(f"[6/6] Outputs saved to output/{name}/:")
     for f in sorted(out_dir.glob("*.csv")) + sorted(out_dir.glob("*.pkl")):
         print(f"      {f.name}")
 
     return {
         "baseline_q":            baseline_q,
         "baseline_communities":  len(baseline_communities),
+        "baseline_summary":      baseline_summary,
+        "linked_full":           linked_full,
+        "linked_order":          linked_order,
     }
 
 
@@ -378,9 +487,11 @@ if __name__ == "__main__":
     print("\n" + "─" * 65)
     print("Building modularity_comparison.csv (all networks)...")
     rows = []
+    linked_rows = []
     for name, res in per_network_results.items():
         bc_q = float(pd.read_csv(OUT / name / "post_attack_bc.csv").iloc[0]["modularity"])
         dc_q = float(pd.read_csv(OUT / name / "post_attack_dc.csv").iloc[0]["modularity"])
+        linked_q = float(pd.read_csv(OUT / name / "post_attack_linked_bc.csv").iloc[0]["modularity"])
         bq   = res["baseline_q"]
         rows.append({
             "network":              name,
@@ -388,14 +499,50 @@ if __name__ == "__main__":
             "baseline_communities": res["baseline_communities"],
             "bc_post_attack_q":     round(bc_q, 4),
             "dc_post_attack_q":     round(dc_q, 4),
+            "linked_bc_post_attack_q": round(linked_q, 4),
             "bc_delta_q":           round(bc_q - bq, 4),
             "dc_delta_q":           round(dc_q - bq, 4),
+            "linked_bc_delta_q":     round(linked_q - bq, 4),
+        })
+        linked = res["linked_full"]
+        linked_rows.append({
+            "network": name,
+            "baseline_num_communities": res["baseline_communities"],
+            "linked_bc_num_communities": linked["num_communities"],
+            "delta_num_communities": linked["num_communities"] - res["baseline_communities"],
+            "baseline_modularity": round(bq, 6),
+            "linked_bc_modularity": round(linked["modularity"], 6),
+            "delta_modularity": round(linked["modularity"] - bq, 6),
+            "num_nodes_removed": linked["num_nodes_removed"],
+            "removed_node_ids_json": json.dumps(linked["actually_removed"]),
+            "num_components": linked["num_components"],
+            "component_sizes_json": json.dumps(linked["component_sizes"]),
+            "num_nontrivial_communities": linked["num_nontrivial_communities"],
+            "community_sizes_json": json.dumps(linked["community_sizes"]),
         })
     comparison_df = pd.DataFrame(rows)
     comparison_df.to_csv(OUT / "modularity_comparison.csv", index=False)
     print("  Saved: output/modularity_comparison.csv")
     print()
     print(comparison_df.to_string(index=False))
+
+    OUT_MULTILAYER.mkdir(parents=True, exist_ok=True)
+    linked_summary_df = pd.DataFrame(linked_rows)
+    linked_summary_df.to_csv(
+        OUT_MULTILAYER / "linked_bc_community_comparison.csv", index=False
+    )
+    print("\n  Saved: output/multilayer/linked_bc_community_comparison.csv")
+    print()
+    print(linked_summary_df[[
+        "network",
+        "baseline_num_communities",
+        "linked_bc_num_communities",
+        "delta_num_communities",
+        "baseline_modularity",
+        "linked_bc_modularity",
+        "delta_modularity",
+        "removed_node_ids_json",
+    ]].to_string(index=False))
 
     print("\n" + "=" * 65)
     print("Done.")

@@ -1,0 +1,3 @@
+graph,strategy,avg_path_length,pct_change_vs_base,sample_size
+baseline,—,44.32862464615965,0.0,500
+post_attack,BC,47.74865345039177,7.715170122085903,500

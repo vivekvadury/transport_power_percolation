@@ -1,0 +1,2 @@
+network,scenario,num_nodes,num_edges,num_nodes_removed,removed_node_ids_json,num_components,component_sizes_json,num_communities,num_nontrivial_communities,community_sizes_json,modularity
+transport,baseline,21197,32057,0,[],1,[21197],60,60,"[668, 661, 650, 616, 569, 565, 544, 531, 518, 514, 513, 485, 475, 463, 453, 448, 444, 443, 441, 440, 430, 422, 420, 413, 376, 358, 352, 348, 346, 344, 341, 338, 337, 331, 327, 316, 315, 315, 298, 288, 283, 276, 271, 270, 237, 233, 214, 199, 197, 183, 172, 159, 155, 153, 146, 138, 137, 119, 118, 81]",0.9544161596207041
