@@ -30,11 +30,17 @@ matplotlib.use("Agg")
 
 import pickle
 import pathlib
+import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
 from pyproj import Transformer
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 # Transport coordinates are EPSG:2926 (WA State Plane North, US survey feet).
 # Power coordinates are already WGS84 (lon/lat).
@@ -227,6 +233,7 @@ def load_network_data(name: str) -> dict:
 
     bc_order = pd.read_csv(out_dir / "removal_order_bc.csv")
     dc_order = pd.read_csv(out_dir / "removal_order_dc.csv")
+    linked_order = pd.read_csv(out_dir / "removal_order_linked_bc.csv")
     tips_df  = pd.read_csv(out_dir / "tipping_points.csv")
 
     def get_tip(strategy):
@@ -241,8 +248,11 @@ def load_network_data(name: str) -> dict:
         "G_lcc":      G_lcc,
         "bc_order":   bc_order,
         "dc_order":   dc_order,
+        "linked_order": linked_order,
         "bc_tip":     get_tip("BC"),
         "dc_tip":     get_tip("DC"),
+        "baseline_asgn": load_pkl(out_dir / "community_assignments_baseline.pkl"),
+        "linked_asgn": load_pkl(out_dir / "community_assignments_linked_bc.pkl"),
         "bc_tip_asgn": load_pkl(out_dir / "community_assignments_bc_tipping.pkl"),
         "dc_tip_asgn": load_pkl(out_dir / "community_assignments_dc_tipping.pkl"),
         "bc_full_asgn": load_pkl(out_dir / "community_assignments_bc_full.pkl"),
@@ -271,6 +281,20 @@ if __name__ == "__main__":
         fig_dir = NETWORKS[name]["fig_dir"]
         print(f"\n  -- {name.upper()} --")
 
+        no_removed = pd.DataFrame(columns=["rank", "node_id", "longitude", "latitude"])
+        plot_community_map(
+            d["G_lcc"], d["baseline_asgn"], no_removed, 0,
+            "Baseline", "No Attack  (k=0)", name,
+            fig_dir / f"map_baseline_{name}.png"
+        )
+
+        linked_k = len(d["linked_order"])
+        plot_community_map(
+            d["G_lcc"], d["linked_asgn"], d["linked_order"], linked_k,
+            "Linked BC", f"Linked Multilayer Removal  (k={linked_k})", name,
+            fig_dir / f"map_linked_bc_{name}.png"
+        )
+
         for strategy, tip_k, tip_asgn, full_asgn, order_df in [
             ("BC", d["bc_tip"], d["bc_tip_asgn"], d["bc_full_asgn"], d["bc_order"]),
             ("DC", d["dc_tip"], d["dc_tip_asgn"], d["dc_full_asgn"], d["dc_order"]),
@@ -279,7 +303,7 @@ if __name__ == "__main__":
                 plot_community_map(
                     d["G_lcc"], tip_asgn, order_df, tip_k,
                     strategy, f"Tipping Point  (k={tip_k})", name,
-                    fig_dir / f"map_{strategy.lower()}_tipping.png"
+                    fig_dir / f"map_{strategy.lower()}_tipping_{name}.png"
                 )
             else:
                 print(f"  [{strategy}] No tipping point — skipping tipping map.")
@@ -288,11 +312,28 @@ if __name__ == "__main__":
             plot_community_map(
                 d["G_lcc"], full_asgn, order_df, full_k,
                 strategy, f"Full Attack  (k={full_k})", name,
-                fig_dir / f"map_{strategy.lower()}_full.png"
+                fig_dir / f"map_{strategy.lower()}_full_{name}.png"
             )
 
     # ── Combined side-by-side maps ────────────────────────────────────────────
     print("\n[3/3] Generating combined side-by-side maps...")
+
+    no_removed = pd.DataFrame(columns=["rank", "node_id", "longitude", "latitude"])
+    plot_combined_map(
+        t["G_lcc"], t["baseline_asgn"], no_removed,
+        p["G_lcc"], p["baseline_asgn"], no_removed,
+        0, 0,
+        "Baseline", "No Attack  (k=0)",
+        FIG_COMB / "map_baseline.png"
+    )
+
+    plot_combined_map(
+        t["G_lcc"], t["linked_asgn"], t["linked_order"],
+        p["G_lcc"], p["linked_asgn"], p["linked_order"],
+        len(t["linked_order"]), len(p["linked_order"]),
+        "Linked BC", "Linked Multilayer Removal",
+        FIG_COMB / "map_linked_bc.png"
+    )
 
     for strategy, t_tip, p_tip, t_tip_asgn, p_tip_asgn, t_full_asgn, p_full_asgn in [
         ("BC",
