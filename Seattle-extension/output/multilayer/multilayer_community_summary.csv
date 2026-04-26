@@ -1,0 +1,3 @@
+scenario,linked_t_nodes,linked_p_nodes,unique_t_communities_linked,unique_p_communities_linked,unique_multilayer_pairs
+baseline,12359,16008,43,115,289
+linked_bc,12359,16008,42,121,311

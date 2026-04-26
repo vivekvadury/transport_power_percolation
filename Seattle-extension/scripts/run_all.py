@@ -1,7 +1,7 @@
 """
 run_all.py
 ==========
-Runs all four analysis scripts in order.
+Runs all six analysis scripts in order.
 
     python scripts/run_all.py
 
@@ -10,6 +10,8 @@ Equivalent to running:
     python scripts/script_02_percolation.py
     python scripts/script_03_comparison.py
     python scripts/script_04_geodviz.py
+    python scripts/script_05_build_multilayer.py
+    python scripts/script_06_multilayer_viz.py
 """
 
 import subprocess
@@ -24,6 +26,9 @@ SCRIPTS = [
     "script_02_percolation.py",
     "script_03_comparison.py",
     "script_04_geodviz.py",
+    "script_05_build_multilayer.py",
+    "script_06_multilayer_viz.py",
+    "script_07_multilayer_community.py",
 ]
 
 
